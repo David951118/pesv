@@ -1,0 +1,334 @@
+# =============================================================================
+# Release Workflow — AION Defensa Predictiva S.A.S (Tauri 2 Desktop Installer)
+# =============================================================================
+# Triggered on tag pushes matching v*. Builds macOS (universal) and Windows
+# (NSIS) artifacts, signs/notarizes, generates SBOM, SHA-256 checksums,
+# and creates a GitHub Release with all artifacts attached.
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: "20"
+  RUST_TOOLCHAIN: stable
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build macOS — Universal binary (x86_64 + aarch64), sign, notarize
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build macOS (Universal)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain with targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Import signing certificate
+        env:
+          # Base64-encoded .p12 certificate — set in GitHub Secrets
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Build Tauri app (universal binary)
+        env:
+          # Placeholder: replace with your actual Apple signing identity
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cargo tauri build --target universal-apple-darwin
+
+      - name: Notarize macOS app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          DMG_PATH=$(find target -name "*.dmg" -type f | head -1)
+
+          if [ -z "$DMG_PATH" ]; then
+            echo "ERROR: No .dmg file found in target/"
+            exit 1
+          fi
+
+          echo "Submitting $DMG_PATH for notarization..."
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+
+          echo "Stapling notarization ticket..."
+          xcrun stapler staple "$DMG_PATH"
+
+      - name: Generate SHA-256 checksum (macOS)
+        run: |
+          DMG_PATH=$(find target -name "*.dmg" -type f | head -1)
+          shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            target/**/*.dmg
+            target/**/*.dmg.sha256
+          retention-days: 5
+
+  # ---------------------------------------------------------------------------
+  # Build Windows — NSIS installer, sign with certificate
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows (NSIS)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build Tauri app (Windows NSIS)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          cargo tauri build
+
+      - name: Sign Windows binaries
+        env:
+          # Placeholder: Azure Key Vault signing credentials
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+        run: |
+          $exe = Get-ChildItem -Path target -Recurse -Filter "*.exe" | Select-Object -First 1
+          $nsis = Get-ChildItem -Path target -Recurse -Filter "*-setup.exe" | Select-Object -First 1
+
+          if ($null -eq $nsis) {
+            Write-Error "No NSIS installer found in target/"
+            exit 1
+          }
+
+          # Install AzureSignTool if not present
+          dotnet tool install --global AzureSignTool 2>$null
+
+          # Sign the NSIS installer
+          AzureSignTool sign `
+            --azure-key-vault-url "$env:AZURE_KEY_VAULT_URI" `
+            --azure-key-vault-client-id "$env:AZURE_CLIENT_ID" `
+            --azure-key-vault-client-secret "$env:AZURE_CLIENT_SECRET" `
+            --azure-key-vault-tenant-id "$env:AZURE_TENANT_ID" `
+            --azure-key-vault-certificate "$env:AZURE_CERT_NAME" `
+            --timestamp-rfc3161 "http://timestamp.digicert.com" `
+            --description "AION Defensa Predictiva S.A.S Installer" `
+            --verbose `
+            $nsis.FullName
+
+      - name: Generate SHA-256 checksum (Windows)
+        shell: pwsh
+        run: |
+          $nsis = Get-ChildItem -Path target -Recurse -Filter "*-setup.exe" | Select-Object -First 1
+          $hash = Get-FileHash -Path $nsis.FullName -Algorithm SHA256
+          "$($hash.Hash)  $($nsis.Name)" | Out-File -FilePath "$($nsis.FullName).sha256" -Encoding utf8
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            target/**/*-setup.exe
+            target/**/*-setup.exe.sha256
+          retention-days: 5
+
+  # ---------------------------------------------------------------------------
+  # SBOM Generation
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM (SPDX)
+        run: |
+          syft dir:. -o spdx-json > sbom-spdx.json
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          syft dir:. -o cyclonedx-json > sbom-cyclonedx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+          retention-days: 90
+
+  # ---------------------------------------------------------------------------
+  # Create GitHub Release — Collect all artifacts and publish
+  # ---------------------------------------------------------------------------
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build-macos, build-windows, sbom]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts
+          path: release-artifacts/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: release-artifacts/windows
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: release-artifacts/sbom
+
+      - name: Collect all artifacts into release directory
+        run: |
+          mkdir -p release-final
+          find release-artifacts -type f \( \
+            -name "*.dmg" -o \
+            -name "*.exe" -o \
+            -name "*.sha256" -o \
+            -name "*.json" \
+          \) -exec cp {} release-final/ \;
+          ls -la release-final/
+
+      - name: Generate combined SHA-256 checksums
+        working-directory: release-final
+        run: |
+          sha256sum *.dmg *.exe 2>/dev/null > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "AION Defensa Predictiva S.A.S ${{ steps.version.outputs.version }}"
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+          files: |
+            release-final/*
+          body: |
+            ## AION Defensa Predictiva S.A.S ${{ steps.version.outputs.version }}
+
+            ### Downloads
+            | Platform | File | Checksum |
+            |----------|------|----------|
+            | macOS (Universal) | `.dmg` | See `SHA256SUMS.txt` |
+            | Windows (NSIS) | `-setup.exe` | See `SHA256SUMS.txt` |
+
+            ### Verification
+            ```bash
+            # Verify checksums after downloading
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ### SBOM
+            Software Bill of Materials is attached in both SPDX and CycloneDX formats.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

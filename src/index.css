@@ -1,0 +1,271 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Paleta Corporativa Asegurar Limitada */
+    /* Azul principal #0B5EA8 → HSL: 210 85% 35% */
+    /* Azul oscuro #0A2E52 → HSL: 212 78% 18% */
+    /* Amarillo acento #FFD400 → HSL: 50 100% 50% */
+
+    --background: 210 20% 98%;
+    --foreground: 212 78% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 212 78% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 212 78% 15%;
+
+    --primary: 210 85% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 212 78% 18%;
+
+    --muted: 210 15% 94%;
+    --muted-foreground: 212 25% 45%;
+
+    --accent: 50 100% 50%;
+    --accent-foreground: 212 78% 18%;
+
+    --destructive: 0 65% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 45 93% 47%;
+    --warning-foreground: 212 78% 15%;
+
+    --success: 152 55% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 210 20% 88%;
+    --input: 210 20% 88%;
+    --ring: 210 85% 35%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 212 78% 18%;
+    --sidebar-primary: 210 85% 35%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 94%;
+    --sidebar-accent-foreground: 212 78% 18%;
+    --sidebar-border: 210 20% 88%;
+    --sidebar-ring: 210 85% 35%;
+
+    /* Custom tokens - Navbar */
+    --nav-background: 212 78% 18%;
+    --nav-foreground: 0 0% 100%;
+    --nav-hover: 210 85% 35%;
+    --nav-active: 210 85% 35%;
+
+    /* Table */
+    --table-header: 210 20% 96%;
+    --table-row-hover: 210 20% 98%;
+    --table-border: 210 20% 90%;
+
+    /* Custom semantic colors */
+    --brand-primary: 210 85% 35%;
+    --brand-dark: 212 78% 18%;
+    --brand-accent: 50 100% 50%;
+
+    /* Neutrales azulados */
+    --neutral-50: 210 20% 98%;
+    --neutral-100: 210 20% 96%;
+    --neutral-200: 210 20% 92%;
+    --neutral-300: 210 20% 85%;
+    --neutral-400: 210 15% 65%;
+    --neutral-500: 212 15% 50%;
+    --neutral-600: 212 20% 40%;
+    --neutral-700: 212 25% 30%;
+    --neutral-800: 212 30% 20%;
+    --neutral-900: 212 35% 12%;
+  }
+
+  .dark {
+    --background: 215 30% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 215 28% 11%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 215 28% 11%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 210 80% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 25% 18%;
+    --secondary-foreground: 210 20% 90%;
+
+    --muted: 215 25% 18%;
+    --muted-foreground: 210 15% 60%;
+
+    --accent: 50 100% 50%;
+    --accent-foreground: 215 30% 8%;
+
+    --destructive: 0 55% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 45 93% 47%;
+    --warning-foreground: 215 30% 8%;
+
+    --success: 152 55% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 215 25% 20%;
+    --input: 215 25% 20%;
+    --ring: 210 80% 50%;
+
+    --nav-background: 215 35% 10%;
+    --nav-foreground: 0 0% 100%;
+    --nav-hover: 210 80% 35%;
+    --nav-active: 210 80% 42%;
+
+    --table-header: 215 25% 14%;
+    --table-row-hover: 215 25% 12%;
+    --table-border: 215 25% 18%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  h1, h2, h3 {
+    @apply text-foreground;
+  }
+}
+
+@layer components {
+  /* Navigation Links */
+  .nav-link {
+    @apply px-3 py-2 text-sm font-medium text-nav-foreground/80 hover:text-nav-foreground hover:bg-nav-hover rounded-md transition-all duration-200;
+  }
+
+  .nav-link-active {
+    @apply bg-nav-active text-nav-foreground shadow-sm;
+  }
+
+  /* Module Cards */
+  .module-card {
+    @apply bg-card rounded-lg border border-border shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md;
+  }
+
+  .module-header {
+    @apply px-4 py-3 border-b border-border bg-table-header flex items-center justify-between;
+  }
+
+  .module-title {
+    @apply text-base font-semibold text-primary;
+  }
+
+  /* Status Badges */
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide;
+  }
+
+  .status-warning {
+    @apply bg-warning/15 text-warning border border-warning/20;
+  }
+
+  .status-danger {
+    @apply bg-destructive/10 text-destructive border border-destructive/15;
+  }
+
+  .status-success {
+    @apply bg-success/10 text-success border border-success/15;
+  }
+
+  .status-neutral {
+    @apply bg-muted text-muted-foreground border border-border;
+  }
+
+  .status-active {
+    @apply bg-success/10 text-success border border-success/15;
+  }
+
+  .status-pending {
+    @apply bg-warning/15 text-warning border border-warning/20;
+  }
+
+  .status-blocked {
+    @apply bg-destructive/10 text-destructive border border-destructive/15;
+  }
+
+  /* Icon containers */
+  .icon-container {
+    @apply p-2.5 rounded-lg bg-primary/8 text-primary transition-colors;
+  }
+
+  .icon-container-warning {
+    @apply p-2.5 rounded-lg bg-warning/10 text-warning;
+  }
+
+  .icon-container-danger {
+    @apply p-2.5 rounded-lg bg-destructive/8 text-destructive;
+  }
+
+  .icon-container-success {
+    @apply p-2.5 rounded-lg bg-success/8 text-success;
+  }
+
+  /* Card styles */
+  .card-corporate {
+    @apply bg-card rounded-lg border border-border shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+
+  .card-header-corporate {
+    @apply px-5 py-4 border-b border-border bg-gradient-to-r from-table-header to-background;
+  }
+
+  .card-title-corporate {
+    @apply text-lg font-semibold text-primary;
+  }
+
+  /* Table styles */
+  .table-corporate {
+    @apply w-full border-collapse;
+  }
+
+  .table-header-corporate {
+    @apply bg-table-header text-foreground font-semibold text-sm uppercase tracking-wider;
+  }
+
+  .table-row-corporate {
+    @apply border-b border-table-border hover:bg-table-row-hover transition-colors;
+  }
+
+  /* CTA Button */
+  .btn-cta {
+    @apply bg-accent text-accent-foreground font-semibold hover:brightness-95 transition-all shadow-sm;
+  }
+
+  /* Action buttons in tables */
+  .action-btn {
+    @apply p-2 rounded-md hover:bg-muted text-muted-foreground hover:text-primary transition-colors;
+  }
+
+  /* Metric display */
+  .metric-value {
+    @apply text-3xl font-bold text-foreground tracking-tight;
+  }
+
+  .metric-label {
+    @apply text-sm text-muted-foreground font-medium;
+  }
+
+  .metric-change {
+    @apply text-xs text-muted-foreground;
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite:*)",
+      "Bash(npm run:*)",
+      "Bash(npm update:*)",
+      "Bash(grep -E \"\\\\.md$|^d\")",
+      "Bash(find /c/Users/dsmon/Downloads/asegurarcoop-platform-main/asegurarcoop-platform-main/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js \\\\\\))",
+      "Bash(grep -l \"supabase\\\\|Supabase\" /c/Users/dsmon/Downloads/asegurarcoop-platform-main/asegurarcoop-platform-main/docs/**/*.md)",
+      "Bash(ls \"c:/Users/dsmon/Downloads/asegurarcoop-platform-main/asegurarcoop-platform-main/\"*.md)",
+      "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/favicon.png)",
+      "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/icon-192.png)",
+      "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/icon-512.png)",
+      "Bash(npx vitest:*)"
+    ]
+  }
+}

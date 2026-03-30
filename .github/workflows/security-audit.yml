@@ -1,0 +1,209 @@
+# =============================================================================
+# Weekly Security Audit — AION Defensa Predictiva S.A.S (Tauri 2 Desktop Installer)
+# =============================================================================
+# Runs every Monday at 06:00 UTC and on manual dispatch. Performs:
+#   - cargo audit (known Rust vulnerabilities)
+#   - npm audit (known JS/TS vulnerabilities)
+#   - cargo deny check (license + advisory checks)
+#   - SBOM generation with Syft
+# =============================================================================
+
+name: Security Audit
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Rust Security Audit — cargo audit + cargo deny
+  # ---------------------------------------------------------------------------
+  rust-audit:
+    name: Rust Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Run cargo audit
+        id: cargo-audit
+        run: |
+          echo "## Cargo Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo audit 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Run cargo deny — advisories
+        id: cargo-deny-advisories
+        run: |
+          echo "## Cargo Deny — Advisories" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo deny check advisories 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Run cargo deny — licenses
+        id: cargo-deny-licenses
+        run: |
+          echo "## Cargo Deny — Licenses" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo deny check licenses 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Run cargo deny — bans
+        id: cargo-deny-bans
+        run: |
+          echo "## Cargo Deny — Bans" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo deny check bans 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Run cargo deny — sources
+        id: cargo-deny-sources
+        run: |
+          echo "## Cargo Deny — Sources" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo deny check sources 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Fail if critical vulnerabilities found
+        if: steps.cargo-audit.outcome == 'failure'
+        run: |
+          echo "::error::Critical Rust vulnerabilities detected — review cargo audit output above."
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # npm Security Audit
+  # ---------------------------------------------------------------------------
+  npm-audit:
+    name: npm Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run npm audit (high + critical)
+        id: npm-audit
+        run: |
+          echo "## npm Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          npm audit --audit-level=high 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+      - name: Run npm audit (full report)
+        run: |
+          echo "## npm Audit — Full Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          npm audit 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if critical npm vulnerabilities found
+        if: steps.npm-audit.outcome == 'failure'
+        run: |
+          echo "::error::Critical npm vulnerabilities detected — review npm audit output above."
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # SBOM Generation — Syft (SPDX + CycloneDX)
+  # ---------------------------------------------------------------------------
+  sbom-generation:
+    name: SBOM Generation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Verify Syft installation
+        run: syft version
+
+      - name: Generate SBOM (SPDX JSON)
+        run: |
+          syft dir:. -o spdx-json > sbom-spdx.json
+          echo "## SBOM Generation" >> $GITHUB_STEP_SUMMARY
+          echo "SPDX SBOM generated: $(wc -l < sbom-spdx.json) lines" >> $GITHUB_STEP_SUMMARY
+
+      - name: Generate SBOM (CycloneDX JSON)
+        run: |
+          syft dir:. -o cyclonedx-json > sbom-cyclonedx.json
+          echo "CycloneDX SBOM generated: $(wc -l < sbom-cyclonedx.json) lines" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-sbom-${{ github.run_id }}
+          path: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+          retention-days: 90
+
+  # ---------------------------------------------------------------------------
+  # Summary — Report overall audit status
+  # ---------------------------------------------------------------------------
+  summary:
+    name: Audit Summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [rust-audit, npm-audit, sbom-generation]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# Weekly Security Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Rust audit | ${{ needs.rust-audit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| npm audit | ${{ needs.npm-audit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| SBOM generation | ${{ needs.sbom-generation.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

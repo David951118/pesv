@@ -1,0 +1,51 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment - NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# Credentials - NEVER commit
+credenciales*
+*.credentials*
+*.secret*
+
+# Vercel
+.vercel
+
+# Large binary / data files
+*.xlsx
+*.pdf
+Archivos-vehiculos-coopsetrans/
+
+# ApiRdnc backend (separate repo)
+ApiRdnc-main
+
+# Legacy Supabase integration (removed)
+src/integrations/supabase/
+
+# User manual (generated)
+MANUAL-USO.md

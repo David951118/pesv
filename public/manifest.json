@@ -1,0 +1,26 @@
+{
+  "name": "Asegurar Limitada",
+  "short_name": "Asegurar",
+  "description": "Control total de tu flota, cumplimiento total en tu operación — Sistema de gestión vehicular y transporte especial",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D3B66",
+  "theme_color": "#0B5EA8",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "48x48",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

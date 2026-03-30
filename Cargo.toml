@@ -1,0 +1,87 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/desktop/src-tauri",
+    "crates/core",
+    "crates/crypto",
+    "crates/sync",
+    "crates/policy",
+    "crates/audit",
+    "crates/providers/supabase",
+    "crates/providers/github",
+    "crates/providers/drive",
+    "crates/providers/aion",
+    "crates/providers/openai",
+    "crates/providers/claude",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["AION Defensa Predictiva S.A.S"]
+
+[workspace.dependencies]
+# Async
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Crypto
+aes-gcm = "0.10"
+blake3 = "1"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+
+# Storage
+rusqlite = { version = "0.31", features = ["bundled", "serde_json"] }
+
+# HTTP
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Keyring
+keyring = "3"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v7", "serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Tauri
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-build = "2"
+tauri-plugin-shell = "2"
+
+# Internal crates
+lah-core = { path = "crates/core" }
+lah-crypto = { path = "crates/crypto" }
+lah-sync = { path = "crates/sync" }
+lah-policy = { path = "crates/policy" }
+lah-audit = { path = "crates/audit" }
+lah-provider-supabase = { path = "crates/providers/supabase" }
+lah-provider-github = { path = "crates/providers/github" }
+lah-provider-drive = { path = "crates/providers/drive" }
+lah-provider-aion = { path = "crates/providers/aion" }
+lah-provider-openai = { path = "crates/providers/openai" }
+lah-provider-claude = { path = "crates/providers/claude" }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
