@@ -45,6 +45,19 @@ import {
 } from "@/components/ui/pagination";
 import { toast } from "sonner";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   UsersIcon,
   Plus,
   Search,
@@ -57,6 +70,8 @@ import {
   Building2,
   Package,
   ArrowRight,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 
 const ITEMS_PER_PAGE = 10;
@@ -110,7 +125,9 @@ export default function Usuarios() {
     fotoUrl: "",
     telefono: "",
     tipoSangre: "",
+    empresaId: "",
   });
+  const [empresaPopoverOpen, setEmpresaPopoverOpen] = useState(false);
 
   // Fetch empresas list for name lookup (admin only)
   const isAdmin = role === "admin";
@@ -159,12 +176,13 @@ export default function Usuarios() {
   const createTerceroMutation = useMutation({
     mutationFn: async () => {
       if (!bearerToken) throw new Error("No autenticado");
-      if (!empresaId) throw new Error("No se encontró empresa. Cierre sesión e inicie sesión de nuevo.");
+      const targetEmpresa = isAdmin ? terceroForm.empresaId : empresaId;
+      if (!targetEmpresa) throw new Error(isAdmin ? "Seleccione una empresa" : "No se encontró empresa. Cierre sesión e inicie sesión de nuevo.");
 
       const body: Record<string, unknown> = {
         identificacion: terceroForm.identificacion,
         tipoId: terceroForm.tipoId,
-        empresa: empresaId,
+        empresa: targetEmpresa,
         nombres: terceroForm.nombres,
         apellidos: terceroForm.apellidos,
         roles: [terceroForm.rol],
@@ -644,6 +662,53 @@ export default function Usuarios() {
                   </SelectContent>
                 </Select>
               </div>
+              {isAdmin && (
+                <div className="space-y-2">
+                  <Label>Empresa *</Label>
+                  <Popover open={empresaPopoverOpen} onOpenChange={setEmpresaPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={empresaPopoverOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span className="truncate">
+                          {terceroForm.empresaId
+                            ? empresasList?.find((e) => e._id === terceroForm.empresaId)?.razonSocial ?? "Empresa seleccionada"
+                            : "Buscar empresa..."}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      <Command>
+                        <CommandInput placeholder="Buscar por nombre..." />
+                        <CommandList>
+                          <CommandEmpty>No se encontraron empresas</CommandEmpty>
+                          <CommandGroup>
+                            {empresasList?.map((emp) => (
+                              <CommandItem
+                                key={emp._id}
+                                value={emp.razonSocial}
+                                onSelect={() => {
+                                  setTerceroForm({ ...terceroForm, empresaId: emp._id });
+                                  setEmpresaPopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${terceroForm.empresaId === emp._id ? "opacity-100" : "opacity-0"}`}
+                                />
+                                {emp.razonSocial}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Nombres *</Label>
@@ -749,7 +814,8 @@ export default function Usuarios() {
                   !terceroForm.identificacion ||
                   !terceroForm.nombres ||
                   !terceroForm.apellidos ||
-                  !terceroForm.usuarioCellvi
+                  !terceroForm.usuarioCellvi ||
+                  (isAdmin && !terceroForm.empresaId)
                 }
               >
                 {createTerceroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
