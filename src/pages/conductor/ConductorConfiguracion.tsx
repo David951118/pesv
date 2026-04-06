@@ -158,6 +158,19 @@ export default function ConductorConfiguracion() {
   }
 
   const empresa = tercero?.empresa && typeof tercero.empresa === "object" ? tercero.empresa : null;
+  const empresaIdStr = tercero?.empresa && typeof tercero.empresa === "string" ? tercero.empresa : null;
+  const { data: empresaFetched } = useQuery({
+    queryKey: ["empresa-detail", empresaIdStr],
+    queryFn: async () => {
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/empresas/${empresaIdStr}`, {
+        headers: { Authorization: `Bearer ${bearerToken}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return (json.data ?? json) as { razonSocial: string; nit?: string } | null;
+    },
+    enabled: !!bearerToken && !!empresaIdStr && !empresa,
+  });
 
   return (
     <ConductorLayout>
@@ -350,11 +363,12 @@ export default function ConductorConfiguracion() {
               </div>
             )}
 
-            {tercero?.empresa && typeof tercero.empresa === "string" && (
+            {!empresa && empresaIdStr && (
               <div className="bg-card border rounded-lg p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Building2 className="h-4 w-4" />
-                  <span>Empresa ID: <span className="font-mono text-foreground">{tercero.empresa}</span></span>
+                  <span>Empresa: <span className="font-medium text-foreground">{empresaFetched?.razonSocial || "Cargando..."}</span></span>
+                  {empresaFetched?.nit && <span className="text-xs">NIT: {empresaFetched.nit}</span>}
                 </div>
               </div>
             )}

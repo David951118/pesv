@@ -96,10 +96,7 @@ export default function Auth() {
                 className="h-28 w-auto mx-auto"
               />
             </div>
-            <CardTitle className="text-2xl font-bold text-primary tracking-tight">Asegurar Limitada</CardTitle>
-            <CardDescription className="text-xs text-slate-400 dark:text-slate-500 font-normal mt-1">
-              Defensa Predictiva 24/7
-            </CardDescription>
+            <CardTitle className="text-lg font-semibold text-primary tracking-tight">Ingresa con tu usuario y clave de Cellvi</CardTitle>
           </CardHeader>
           <CardContent>
             {error && (

@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSessionState } from "@/hooks/useSessionState";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { uploadFileToS3 } from "@/lib/uploadToS3";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
@@ -27,6 +28,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -72,6 +83,11 @@ import {
   ArrowRight,
   ChevronsUpDown,
   Check,
+  Pencil,
+  Trash2,
+  Upload,
+  Camera,
+  ImageIcon,
 } from "lucide-react";
 
 const ITEMS_PER_PAGE = 10;
@@ -85,11 +101,30 @@ interface TerceroData {
   roles: string[];
   usuarioCellvi: string;
   fotoUrl?: string;
+  foto?: { url: string; key: string };
   contacto?: { telefono?: string };
   datosConductor?: { tipoSangre?: string };
   empresa?: string | { _id: string; razonSocial: string };
   estado?: string;
 }
+
+interface PhotoUploadState {
+  file: File | null;
+  previewUrl: string | null;
+  publicUrl: string | null;
+  key: string | null;
+  uploading: boolean;
+  progress: number;
+}
+
+const initialPhotoState: PhotoUploadState = {
+  file: null,
+  previewUrl: null,
+  publicUrl: null,
+  key: null,
+  uploading: false,
+  progress: 0,
+};
 
 function getRolLabel(rol: string): string {
   const labels: Record<string, string> = {
@@ -102,6 +137,10 @@ function getRolLabel(rol: string): string {
   return labels[rol] || rol;
 }
 
+function getTerceroPhotoUrl(tercero: TerceroData): string | undefined {
+  return tercero.foto?.url || tercero.fotoUrl;
+}
+
 export default function Usuarios() {
   const queryClient = useQueryClient();
   const { empresaId, bearerToken, role } = useAuth();
@@ -110,9 +149,11 @@ export default function Usuarios() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const [showList, setShowList] = useState(!!initialUserId); // start on dashboard unless deep-linking
+  const [showList, setShowList] = useState(!!initialUserId);
 
   const [showCreateDialog, setShowCreateDialog, clearCreateDialog] = useSessionState("usr-create-open", false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [viewingUser, setViewingUser] = useState<TerceroData | null>(null);
 
   const [terceroForm, setTerceroForm, clearTerceroForm] = useSessionState("usr-tercero-form", {
@@ -122,12 +163,31 @@ export default function Usuarios() {
     apellidos: "",
     rol: "CONDUCTOR",
     usuarioCellvi: "",
-    fotoUrl: "",
     telefono: "",
     tipoSangre: "",
     empresaId: "",
   });
   const [empresaPopoverOpen, setEmpresaPopoverOpen] = useState(false);
+  const [editEmpresaPopoverOpen, setEditEmpresaPopoverOpen] = useState(false);
+
+  // Photo upload state for create and edit
+  const [createPhoto, setCreatePhoto] = useState<PhotoUploadState>(initialPhotoState);
+  const [editPhoto, setEditPhoto] = useState<PhotoUploadState>(initialPhotoState);
+  const createFileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit form state
+  const [editForm, setEditForm] = useState({
+    identificacion: "",
+    tipoId: "CC",
+    nombres: "",
+    apellidos: "",
+    rol: "CONDUCTOR",
+    usuarioCellvi: "",
+    telefono: "",
+    tipoSangre: "",
+    empresaId: "",
+  });
 
   // Fetch empresas list for name lookup (admin only)
   const isAdmin = role === "admin";
@@ -145,13 +205,19 @@ export default function Usuarios() {
   });
 
   const getEmpresaName = (empresa?: string | { _id: string; razonSocial: string }) => {
-    if (!empresa) return "—";
+    if (!empresa) return "\u2014";
     if (typeof empresa === "object") return empresa.razonSocial;
     const found = empresasList?.find((e) => e._id === empresa);
     return found?.razonSocial || empresa;
   };
 
-  // Fetch terceros — admin gets all, supervisor gets empresa-filtered
+  const getEmpresaId = (empresa?: string | { _id: string; razonSocial: string }) => {
+    if (!empresa) return "";
+    if (typeof empresa === "object") return empresa._id;
+    return empresa;
+  };
+
+  // Fetch terceros
   const { data: terceros, isLoading, error } = useQuery({
     queryKey: ["terceros-list", isAdmin ? "all" : empresaId],
     queryFn: async () => {
@@ -172,7 +238,78 @@ export default function Usuarios() {
     enabled: !!bearerToken && (isAdmin || !!empresaId),
   });
 
-  // Create tercero mutation
+  // ────── Photo upload helper ──────
+  const handlePhotoUpload = async (
+    file: File,
+    setPhotoState: React.Dispatch<React.SetStateAction<PhotoUploadState>>,
+  ) => {
+    if (!bearerToken) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoState({
+      file,
+      previewUrl,
+      publicUrl: null,
+      key: null,
+      uploading: true,
+      progress: 0,
+    });
+
+    try {
+      const base = getApiRndcBaseUrl();
+      // 1. Get presigned URL
+      const presignRes = await fetch(`${base}/api/terceros/foto/presigned-url`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type }),
+      });
+      const presignResult = await presignRes.json();
+      if (!presignRes.ok || !presignResult.success) {
+        throw new Error(presignResult.error || "Error al obtener URL de subida");
+      }
+
+      const { uploadUrl, key, publicUrl } = presignResult.data;
+
+      // 2. Upload to S3
+      await uploadFileToS3(uploadUrl, file, (progress) => {
+        setPhotoState((prev) => ({ ...prev, progress: progress.percent }));
+      });
+
+      // 3. Store result
+      setPhotoState((prev) => ({
+        ...prev,
+        publicUrl,
+        key,
+        uploading: false,
+        progress: 100,
+      }));
+      toast.success("Foto subida correctamente");
+    } catch (err) {
+      setPhotoState(initialPhotoState);
+      toast.error(err instanceof Error ? err.message : "Error al subir la foto");
+    }
+  };
+
+  const associatePhoto = async (terceroId: string, photoPublicUrl: string, photoKey: string) => {
+    const base = getApiRndcBaseUrl();
+    const res = await fetch(`${base}/api/terceros/${terceroId}/foto`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url: photoPublicUrl, key: photoKey }),
+    });
+    if (!res.ok) {
+      const result = await res.json();
+      throw new Error(result.error || "Error al asociar la foto");
+    }
+  };
+
+  // ────── Create tercero mutation ──────
   const createTerceroMutation = useMutation({
     mutationFn: async () => {
       if (!bearerToken) throw new Error("No autenticado");
@@ -187,7 +324,6 @@ export default function Usuarios() {
         apellidos: terceroForm.apellidos,
         roles: [terceroForm.rol],
         usuarioCellvi: terceroForm.usuarioCellvi,
-        fotoUrl: terceroForm.fotoUrl || undefined,
         contacto: {
           telefono: terceroForm.telefono,
         },
@@ -209,6 +345,15 @@ export default function Usuarios() {
 
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || result.message || "Error al crear tercero");
+
+      // Associate photo if uploaded
+      if (createPhoto.publicUrl && createPhoto.key) {
+        const terceroId = result.data?._id || result._id;
+        if (terceroId) {
+          await associatePhoto(terceroId, createPhoto.publicUrl, createPhoto.key);
+        }
+      }
+
       return result;
     },
     onSuccess: () => {
@@ -216,6 +361,110 @@ export default function Usuarios() {
       queryClient.invalidateQueries({ queryKey: ["terceros-list"] });
       setShowCreateDialog(false);
       resetForm();
+      setCreatePhoto(initialPhotoState);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // ────── Edit tercero mutation ──────
+  const editTerceroMutation = useMutation({
+    mutationFn: async () => {
+      if (!bearerToken || !viewingUser) throw new Error("No autenticado");
+      const targetEmpresa = isAdmin ? editForm.empresaId : empresaId;
+      if (!targetEmpresa) throw new Error(isAdmin ? "Seleccione una empresa" : "No se encontró empresa.");
+
+      const body: Record<string, unknown> = {
+        identificacion: editForm.identificacion,
+        tipoId: editForm.tipoId,
+        empresa: targetEmpresa,
+        nombres: editForm.nombres,
+        apellidos: editForm.apellidos,
+        roles: [editForm.rol],
+        usuarioCellvi: editForm.usuarioCellvi,
+        contacto: {
+          telefono: editForm.telefono,
+        },
+      };
+
+      if (editForm.rol === "CONDUCTOR" && editForm.tipoSangre) {
+        body.datosConductor = { tipoSangre: editForm.tipoSangre };
+      }
+
+      const base = getApiRndcBaseUrl();
+      const res = await fetch(`${base}/api/terceros/${viewingUser._id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || result.message || "Error al actualizar tercero");
+
+      // Associate photo if a new one was uploaded
+      if (editPhoto.publicUrl && editPhoto.key) {
+        await associatePhoto(viewingUser._id, editPhoto.publicUrl, editPhoto.key);
+      }
+
+      return result;
+    },
+    onSuccess: () => {
+      toast.success("Tercero actualizado exitosamente");
+      queryClient.invalidateQueries({ queryKey: ["terceros-list"] });
+      setShowEditDialog(false);
+      setEditPhoto(initialPhotoState);
+      // Refresh viewing user
+      if (viewingUser) {
+        const updatedUser: TerceroData = {
+          ...viewingUser,
+          identificacion: editForm.identificacion,
+          tipoId: editForm.tipoId,
+          nombres: editForm.nombres,
+          apellidos: editForm.apellidos,
+          roles: [editForm.rol],
+          usuarioCellvi: editForm.usuarioCellvi,
+          contacto: { telefono: editForm.telefono },
+          datosConductor: editForm.rol === "CONDUCTOR" && editForm.tipoSangre
+            ? { tipoSangre: editForm.tipoSangre }
+            : undefined,
+          foto: editPhoto.publicUrl && editPhoto.key
+            ? { url: editPhoto.publicUrl, key: editPhoto.key }
+            : viewingUser.foto,
+        };
+        setViewingUser(updatedUser);
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // ────── Delete tercero mutation ──────
+  const deleteTerceroMutation = useMutation({
+    mutationFn: async () => {
+      if (!bearerToken || !viewingUser) throw new Error("No autenticado");
+
+      const base = getApiRndcBaseUrl();
+      const res = await fetch(`${base}/api/terceros/${viewingUser._id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+        },
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || result.message || "Error al eliminar tercero");
+      return result;
+    },
+    onSuccess: () => {
+      toast.success("Tercero eliminado exitosamente");
+      queryClient.invalidateQueries({ queryKey: ["terceros-list"] });
+      setShowDeleteDialog(false);
+      handleViewUser(null);
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -225,6 +474,30 @@ export default function Usuarios() {
   const resetForm = () => {
     clearTerceroForm();
     clearCreateDialog();
+  };
+
+  const openEditDialog = (tercero?: TerceroData) => {
+    const target = tercero || viewingUser;
+    if (!target) return;
+    if (tercero) setViewingUser(tercero);
+    setEditForm({
+      identificacion: target.identificacion,
+      tipoId: target.tipoId,
+      nombres: target.nombres,
+      apellidos: target.apellidos,
+      rol: target.roles?.[0] || "CONDUCTOR",
+      usuarioCellvi: target.usuarioCellvi,
+      telefono: target.contacto?.telefono || "",
+      tipoSangre: target.datosConductor?.tipoSangre || "",
+      empresaId: getEmpresaId(target.empresa),
+    });
+    setEditPhoto(initialPhotoState);
+    setShowEditDialog(true);
+  };
+
+  const openDeleteDialog = (tercero: TerceroData) => {
+    setViewingUser(tercero);
+    setShowDeleteDialog(true);
   };
 
   // Restore viewing user from URL
@@ -271,7 +544,7 @@ export default function Usuarios() {
     const items = [];
     const maxVisiblePages = 5;
     let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
 
     if (endPage - startPage + 1 < maxVisiblePages) {
       startPage = Math.max(1, endPage - maxVisiblePages + 1);
@@ -328,6 +601,152 @@ export default function Usuarios() {
     setViewingUser(null);
     setSearchParams({}, { replace: true });
   };
+
+  // ────── Photo upload UI component ──────
+  const renderPhotoUpload = (
+    photoState: PhotoUploadState,
+    setPhotoState: React.Dispatch<React.SetStateAction<PhotoUploadState>>,
+    fileInputRef: React.RefObject<HTMLInputElement | null>,
+    existingPhotoUrl?: string,
+  ) => {
+    const displayUrl = photoState.previewUrl || existingPhotoUrl;
+
+    return (
+      <div className="space-y-2">
+        <Label>Foto</Label>
+        <div className="flex items-center gap-4">
+          {/* Preview thumbnail */}
+          <div className="relative h-20 w-20 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden bg-muted/30 shrink-0">
+            {displayUrl ? (
+              <img
+                src={displayUrl}
+                alt="Preview"
+                className="h-full w-full object-cover rounded-lg"
+              />
+            ) : (
+              <Camera className="h-8 w-8 text-muted-foreground/50" />
+            )}
+            {photoState.uploading && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
+                <Loader2 className="h-6 w-6 animate-spin text-white" />
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 space-y-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  handlePhotoUpload(file, setPhotoState);
+                }
+                // Reset input so same file can be re-selected
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={photoState.uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {photoState.uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Subiendo...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  {displayUrl ? "Cambiar foto" : "Seleccionar foto"}
+                </>
+              )}
+            </Button>
+
+            {/* Progress bar */}
+            {photoState.uploading && (
+              <div className="w-full bg-muted rounded-full h-2">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${photoState.progress}%` }}
+                />
+              </div>
+            )}
+
+            {/* Upload status */}
+            {photoState.publicUrl && (
+              <div className="flex items-center gap-1 text-xs text-green-600">
+                <ImageIcon className="h-3 w-3" />
+                <span>Foto lista</span>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">JPG, PNG o WebP</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ────── Empresa combobox component ──────
+  const renderEmpresaCombobox = (
+    value: string,
+    onChange: (id: string) => void,
+    open: boolean,
+    onOpenChange: (open: boolean) => void,
+  ) => (
+    <div className="space-y-2">
+      <Label>Empresa *</Label>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between font-normal"
+          >
+            <span className="truncate">
+              {value
+                ? empresasList?.find((e) => e._id === value)?.razonSocial ?? "Empresa seleccionada"
+                : "Buscar empresa..."}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+          <Command>
+            <CommandInput placeholder="Buscar por nombre..." />
+            <CommandList>
+              <CommandEmpty>No se encontraron empresas</CommandEmpty>
+              <CommandGroup>
+                {empresasList?.map((emp) => (
+                  <CommandItem
+                    key={emp._id}
+                    value={emp.razonSocial}
+                    onSelect={() => {
+                      onChange(emp._id);
+                      onOpenChange(false);
+                    }}
+                  >
+                    <Check
+                      className={`mr-2 h-4 w-4 ${value === emp._id ? "opacity-100" : "opacity-0"}`}
+                    />
+                    {emp.razonSocial}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 
   return (
     <DashboardLayout>
@@ -412,17 +831,34 @@ export default function Usuarios() {
         <ContentCard>
           {viewingUser ? (
             <div className="space-y-6">
-              <Button variant="ghost" onClick={() => { handleViewUser(null); }} className="gap-2">
-                <ArrowLeft className="h-4 w-4" />
-                Volver al listado
-              </Button>
+              <div className="flex items-center justify-between">
+                <Button variant="ghost" onClick={() => { handleViewUser(null); }} className="gap-2">
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver al listado
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={openEditDialog} className="gap-2">
+                    <Pencil className="h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar
+                  </Button>
+                </div>
+              </div>
 
               {/* Tercero header */}
               <div className="bg-muted/30 border rounded-lg p-6">
                 <div className="flex items-start gap-4">
-                  {viewingUser.fotoUrl ? (
+                  {getTerceroPhotoUrl(viewingUser) ? (
                     <img
-                      src={viewingUser.fotoUrl}
+                      src={getTerceroPhotoUrl(viewingUser)}
                       alt={`${viewingUser.nombres} ${viewingUser.apellidos}`}
                       className="h-20 w-20 rounded-lg object-cover"
                     />
@@ -463,6 +899,12 @@ export default function Usuarios() {
                   <div className="bg-card border rounded-lg p-4">
                     <p className="text-sm text-muted-foreground">Tipo de Sangre</p>
                     <p className="font-medium">{viewingUser.datosConductor.tipoSangre}</p>
+                  </div>
+                )}
+                {isAdmin && (
+                  <div className="bg-card border rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground">Empresa</p>
+                    <p className="font-medium">{getEmpresaName(viewingUser.empresa)}</p>
                   </div>
                 )}
               </div>
@@ -538,12 +980,13 @@ export default function Usuarios() {
                           {isAdmin && <TableHead>Empresa</TableHead>}
                           <TableHead>Usuario Cellvi</TableHead>
                           <TableHead>Teléfono</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {paginatedTerceros.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
+                            <TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">
                               No se encontraron terceros
                             </TableCell>
                           </TableRow>
@@ -591,6 +1034,28 @@ export default function Usuarios() {
                                   {tercero.contacto?.telefono || "-"}
                                 </span>
                               </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    title="Editar"
+                                    onClick={(e) => { e.stopPropagation(); openEditDialog(tercero); }}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    title="Eliminar"
+                                    onClick={(e) => { e.stopPropagation(); openDeleteDialog(tercero); }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
                             </TableRow>
                           ))
                         )}
@@ -634,8 +1099,14 @@ export default function Usuarios() {
         </ContentCard>
         )}
 
-        {/* Create Tercero Dialog */}
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        {/* ─── Create Tercero Dialog ─── */}
+        <Dialog
+          open={showCreateDialog}
+          onOpenChange={(open) => {
+            setShowCreateDialog(open);
+            if (!open) setCreatePhoto(initialPhotoState);
+          }}
+        >
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Crear Nuevo Tercero</DialogTitle>
@@ -662,52 +1133,11 @@ export default function Usuarios() {
                   </SelectContent>
                 </Select>
               </div>
-              {isAdmin && (
-                <div className="space-y-2">
-                  <Label>Empresa *</Label>
-                  <Popover open={empresaPopoverOpen} onOpenChange={setEmpresaPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={empresaPopoverOpen}
-                        className="w-full justify-between font-normal"
-                      >
-                        <span className="truncate">
-                          {terceroForm.empresaId
-                            ? empresasList?.find((e) => e._id === terceroForm.empresaId)?.razonSocial ?? "Empresa seleccionada"
-                            : "Buscar empresa..."}
-                        </span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                      <Command>
-                        <CommandInput placeholder="Buscar por nombre..." />
-                        <CommandList>
-                          <CommandEmpty>No se encontraron empresas</CommandEmpty>
-                          <CommandGroup>
-                            {empresasList?.map((emp) => (
-                              <CommandItem
-                                key={emp._id}
-                                value={emp.razonSocial}
-                                onSelect={() => {
-                                  setTerceroForm({ ...terceroForm, empresaId: emp._id });
-                                  setEmpresaPopoverOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={`mr-2 h-4 w-4 ${terceroForm.empresaId === emp._id ? "opacity-100" : "opacity-0"}`}
-                                />
-                                {emp.razonSocial}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+              {isAdmin && renderEmpresaCombobox(
+                terceroForm.empresaId,
+                (id) => setTerceroForm({ ...terceroForm, empresaId: id }),
+                empresaPopoverOpen,
+                setEmpresaPopoverOpen,
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -771,14 +1201,10 @@ export default function Usuarios() {
                   placeholder="Número de teléfono"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Foto URL</Label>
-                <Input
-                  value={terceroForm.fotoUrl}
-                  onChange={(e) => setTerceroForm({ ...terceroForm, fotoUrl: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
+
+              {/* Photo upload replaces old Foto URL text input */}
+              {renderPhotoUpload(createPhoto, setCreatePhoto, createFileInputRef)}
+
               {terceroForm.rol === "CONDUCTOR" && (
                 <div className="space-y-2">
                   <Label>Tipo de Sangre</Label>
@@ -811,6 +1237,7 @@ export default function Usuarios() {
                 onClick={() => createTerceroMutation.mutate()}
                 disabled={
                   createTerceroMutation.isPending ||
+                  createPhoto.uploading ||
                   !terceroForm.identificacion ||
                   !terceroForm.nombres ||
                   !terceroForm.apellidos ||
@@ -824,6 +1251,194 @@ export default function Usuarios() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ─── Edit Tercero Dialog ─── */}
+        <Dialog
+          open={showEditDialog}
+          onOpenChange={(open) => {
+            setShowEditDialog(open);
+            if (!open) setEditPhoto(initialPhotoState);
+          }}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Editar Tercero</DialogTitle>
+              <DialogDescription>
+                Modifique los datos del tercero.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Rol *</Label>
+                <Select
+                  value={editForm.rol}
+                  onValueChange={(value) => setEditForm({ ...editForm, rol: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CONDUCTOR">Conductor</SelectItem>
+                    <SelectItem value="PROPIETARIO">Propietario</SelectItem>
+                    <SelectItem value="CLIENTE">Cliente</SelectItem>
+                    <SelectItem value="ADMINISTRATIVO">Administrativo</SelectItem>
+                    <SelectItem value="PROVEEDOR">Proveedor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {isAdmin && renderEmpresaCombobox(
+                editForm.empresaId,
+                (id) => setEditForm({ ...editForm, empresaId: id }),
+                editEmpresaPopoverOpen,
+                setEditEmpresaPopoverOpen,
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Nombres *</Label>
+                  <Input
+                    value={editForm.nombres}
+                    onChange={(e) => setEditForm({ ...editForm, nombres: e.target.value })}
+                    placeholder="Nombres"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Apellidos *</Label>
+                  <Input
+                    value={editForm.apellidos}
+                    onChange={(e) => setEditForm({ ...editForm, apellidos: e.target.value })}
+                    placeholder="Apellidos"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Tipo Documento *</Label>
+                  <Select
+                    value={editForm.tipoId}
+                    onValueChange={(value) => setEditForm({ ...editForm, tipoId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CC">CC - Cédula</SelectItem>
+                      <SelectItem value="CE">CE - Cédula Extranjería</SelectItem>
+                      <SelectItem value="NIT">NIT</SelectItem>
+                      <SelectItem value="TI">TI - Tarjeta Identidad</SelectItem>
+                      <SelectItem value="PA">PA - Pasaporte</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Identificación *</Label>
+                  <Input
+                    value={editForm.identificacion}
+                    onChange={(e) => setEditForm({ ...editForm, identificacion: e.target.value })}
+                    placeholder="Número de documento"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Usuario Cellvi *</Label>
+                <Input
+                  value={editForm.usuarioCellvi}
+                  onChange={(e) => setEditForm({ ...editForm, usuarioCellvi: e.target.value })}
+                  placeholder="Usuario Cellvi"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Teléfono</Label>
+                <Input
+                  value={editForm.telefono}
+                  onChange={(e) => setEditForm({ ...editForm, telefono: e.target.value })}
+                  placeholder="Número de teléfono"
+                />
+              </div>
+
+              {/* Photo upload with existing photo preview */}
+              {renderPhotoUpload(
+                editPhoto,
+                setEditPhoto,
+                editFileInputRef,
+                viewingUser ? getTerceroPhotoUrl(viewingUser) : undefined,
+              )}
+
+              {editForm.rol === "CONDUCTOR" && (
+                <div className="space-y-2">
+                  <Label>Tipo de Sangre</Label>
+                  <Select
+                    value={editForm.tipoSangre}
+                    onValueChange={(value) => setEditForm({ ...editForm, tipoSangre: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione tipo de sangre" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="O+">O+</SelectItem>
+                      <SelectItem value="O-">O-</SelectItem>
+                      <SelectItem value="A+">A+</SelectItem>
+                      <SelectItem value="A-">A-</SelectItem>
+                      <SelectItem value="B+">B+</SelectItem>
+                      <SelectItem value="B-">B-</SelectItem>
+                      <SelectItem value="AB+">AB+</SelectItem>
+                      <SelectItem value="AB-">AB-</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => editTerceroMutation.mutate()}
+                disabled={
+                  editTerceroMutation.isPending ||
+                  editPhoto.uploading ||
+                  !editForm.identificacion ||
+                  !editForm.nombres ||
+                  !editForm.apellidos ||
+                  !editForm.usuarioCellvi ||
+                  (isAdmin && !editForm.empresaId)
+                }
+              >
+                {editTerceroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Guardar Cambios
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Delete Confirmation Dialog ─── */}
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Eliminar Tercero</AlertDialogTitle>
+              <AlertDialogDescription>
+                {viewingUser
+                  ? `¿Está seguro de que desea eliminar a ${viewingUser.nombres} ${viewingUser.apellidos} (${viewingUser.tipoId} ${viewingUser.identificacion})? Esta acción no se puede deshacer.`
+                  : "Esta acción no se puede deshacer."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteTerceroMutation.isPending}>
+                Cancelar
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  deleteTerceroMutation.mutate();
+                }}
+                disabled={deleteTerceroMutation.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleteTerceroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PageContainer>
     </DashboardLayout>
   );

@@ -22,6 +22,9 @@ import {
   ScrollText,
   Map,
   TrendingUp,
+  FileWarning,
+  Clock,
+  Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -245,6 +248,60 @@ function SupervisorDashboard() {
           </div>
         ) : (
           <>
+            {/* Alert banners */}
+            {(docVencidos > 0 || docPorVencer > 0 || preopConNovedad > 0) && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
+                {docVencidos > 0 && (
+                  <Link
+                    to="/documentos"
+                    className="flex items-start gap-3 p-4 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10 hover:shadow-md transition-shadow"
+                  >
+                    <div className="p-2 rounded-full bg-red-100 dark:bg-red-900/30">
+                      <FileWarning className="h-5 w-5 text-red-600 dark:text-red-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                        Documentos vencidos
+                      </p>
+                      <p className="text-2xl font-bold text-red-600 dark:text-red-300">{docVencidos}</p>
+                    </div>
+                  </Link>
+                )}
+                {docPorVencer > 0 && (
+                  <Link
+                    to="/documentos"
+                    className="flex items-start gap-3 p-4 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/10 hover:shadow-md transition-shadow"
+                  >
+                    <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900/30">
+                      <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                        Documentos por vencer
+                      </p>
+                      <p className="text-2xl font-bold text-amber-600 dark:text-amber-300">{docPorVencer}</p>
+                    </div>
+                  </Link>
+                )}
+                {preopConNovedad > 0 && (
+                  <Link
+                    to="/preoperativas"
+                    className="flex items-start gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/10 hover:shadow-md transition-shadow"
+                  >
+                    <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                      <Wrench className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                        Correcciones pendientes
+                      </p>
+                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-300">{preopConNovedad}</p>
+                    </div>
+                  </Link>
+                )}
+              </div>
+            )}
+
             <StatsGrid stats={stats} columns={4} />
 
             {/* Preoperacionales breakdown */}

@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => ({
           });
         },
       },
+      '/rndcapi': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/rndcapi/, ''),
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

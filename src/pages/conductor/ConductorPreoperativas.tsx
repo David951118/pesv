@@ -29,6 +29,10 @@ import {
   FileWarning,
   History,
   QrCode,
+  Wrench,
+  Clock,
+  ImageIcon,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignaturePad } from "@/components/preoperativas/SignaturePad";
@@ -80,6 +84,33 @@ const ALL_ITEMS = [
 
 const TOTAL_ITEMS = ALL_ITEMS.length; // 24
 
+// ── Item label lookup (for novedades) ──
+const ITEM_LABELS: Record<string, string> = {};
+for (const item of SECCION_DELANTERA_ITEMS) ITEM_LABELS[`seccionDelantera.${item.key}`] = item.label;
+for (const item of SECCION_MEDIA_ITEMS) ITEM_LABELS[`seccionMedia.${item.key}`] = item.label;
+for (const item of SECCION_TRASERA_ITEMS) ITEM_LABELS[`seccionTrasera.${item.key}`] = item.label;
+// Also map bare keys
+for (const item of ALL_ITEMS) ITEM_LABELS[item.key] = item.label;
+
+// ── Novedad types ──
+interface NovedadItem {
+  _id: string;
+  item: string;
+  descripcion: string;
+  fotoFalla: string;
+  fotoCorreccion: string | null;
+  fechaLimite: string;
+  resuelta: boolean;
+  fechaResolucion: string | null;
+}
+
+interface PreopConNovedades {
+  _id: string;
+  vehiculo: { placa: string; marca: string; linea: string };
+  novedades: NovedadItem[];
+  resumenNovedades: { total: number; pendientes: number; resueltas: number; diasRestantes: number };
+}
+
 // ── Types ──
 
 interface PreopHistorialItem {
@@ -100,6 +131,8 @@ interface ItemState {
   estado: ItemEstado;
   observaciones: string;
   fotoCapturada: boolean;
+  fotoUrl: string;
+  uploadingFoto: boolean;
 }
 
 type FormItems = Record<string, ItemState>;
@@ -127,7 +160,7 @@ type VehiculoResult = VehiculoInfo | VehiculoNotFound;
 function defaultItems(): FormItems {
   const items: FormItems = {};
   for (const item of ALL_ITEMS) {
-    items[item.key] = { estado: null, observaciones: "", fotoCapturada: false };
+    items[item.key] = { estado: null, observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false };
   }
   return items;
 }
@@ -154,6 +187,13 @@ export default function ConductorPreoperativas() {
   // Historial state
   const [showHistorial, setShowHistorial] = useState(false);
   const [qrItem, setQrItem] = useState<PreopHistorialItem | null>(null);
+
+  // Novedades state
+  const [showNovedades, setShowNovedades] = useState(false);
+  const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
+  const [resolvingNovedadId, setResolvingNovedadId] = useState<string | null>(null);
+  const [uploadingCorreccion, setUploadingCorreccion] = useState(false);
+  const novedadFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Form state persisted in session
   const [formItems, setFormItems, clearFormItems] = useSessionState<FormItems>(
@@ -258,6 +298,78 @@ export default function ConductorPreoperativas() {
     enabled: !!bearerToken && !!conductorId && showHistorial,
   });
 
+  // ── Fetch novedades ──
+  const { data: novedadesData = [], isLoading: loadingNovedades } = useQuery({
+    queryKey: ["conductor-novedades"],
+    queryFn: async (): Promise<PreopConNovedades[]> => {
+      if (!bearerToken) return [];
+      const res = await fetch(
+        `${getApiRndcBaseUrl()}/api/preoperacionales/novedades`,
+        { headers: { Authorization: `Bearer ${bearerToken}` } }
+      );
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.data || json) as PreopConNovedades[];
+    },
+    enabled: !!bearerToken,
+  });
+
+  // Total pending novedades count (for badge)
+  const totalPendientes = useMemo(() => {
+    return novedadesData.reduce((sum, p) => sum + (p.resumenNovedades?.pendientes || 0), 0);
+  }, [novedadesData]);
+
+  // ── Resolve novedad handler ──
+  const handleResolveNovedad = async (preopId: string, novedadId: string, file: File) => {
+    if (!bearerToken) return;
+    setUploadingCorreccion(true);
+    try {
+      // 1. Get presigned URL
+      const presRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${bearerToken}`,
+        },
+        body: JSON.stringify({
+          fileName: `correccion-${novedadId}-${Date.now()}.${file.name.split(".").pop()}`,
+          mimeType: file.type || "image/jpeg",
+        }),
+      });
+      if (!presRes.ok) throw new Error("Error al obtener URL de subida");
+      const presJson = await presRes.json();
+      const { uploadUrl, publicUrl } = presJson.data || presJson;
+
+      // 2. Upload to S3
+      await uploadFileToS3(uploadUrl, file);
+
+      // 3. Mark as resolved
+      const resolveRes = await fetch(
+        `${getApiRndcBaseUrl()}/api/preoperacionales/${preopId}/novedades/${novedadId}/resolver`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${bearerToken}`,
+          },
+          body: JSON.stringify({ fotoCorreccion: publicUrl }),
+        }
+      );
+      if (!resolveRes.ok) {
+        const errData = await resolveRes.json().catch(() => null);
+        throw new Error(errData?.message || "Error al resolver la novedad");
+      }
+
+      toast.success("Novedad resuelta exitosamente");
+      queryClient.invalidateQueries({ queryKey: ["conductor-novedades"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al resolver la novedad");
+    } finally {
+      setUploadingCorreccion(false);
+      setResolvingNovedadId(null);
+    }
+  };
+
   // ── Computed form stats ──
   const { reviewed, fallas, isFormValid } = useMemo(() => {
     let reviewed = 0;
@@ -282,7 +394,7 @@ export default function ConductorPreoperativas() {
     return { reviewed, fallas, isFormValid: complete };
   }, [formItems, kilometraje, firmadoCheck]);
 
-  const estadoGeneral = fallas > 0 ? "CON_NOVEDAD" : "APROBADO";
+  const estadoGeneral = fallas > 0 ? "RECHAZADO" : "APROBADO";
 
   // ── Submit mutation ──
   const submitMutation = useMutation({
@@ -301,7 +413,7 @@ export default function ConductorPreoperativas() {
           section[item.key] = {
             estado: s?.estado || "OK",
             observaciones: s?.observaciones || "",
-            fotoUrl: "",
+            fotoUrl: s?.fotoUrl || "",
           };
         }
         return section;
@@ -312,7 +424,6 @@ export default function ConductorPreoperativas() {
         conductor: conductorId,
         fecha: new Date().toISOString(),
         kilometraje: Number(kilometraje),
-        estadoGeneral,
         firmadoCheck,
         firmaConductorUrl: firmaUrl || undefined,
         seccionDelantera: buildSection(SECCION_DELANTERA_ITEMS),
@@ -392,7 +503,7 @@ export default function ConductorPreoperativas() {
         ...prev[key],
         estado,
         // If switching to OK, clear falla data
-        ...(estado === "OK" ? { observaciones: "", fotoCapturada: false } : {}),
+        ...(estado === "OK" ? { observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false } : {}),
       },
     }));
   };
@@ -409,14 +520,45 @@ export default function ConductorPreoperativas() {
     if (input) input.click();
   };
 
-  const onFileSelected = (key: string) => {
+  const onFileSelected = async (key: string) => {
     const input = fileInputRefs.current[key];
-    if (input?.files && input.files.length > 0) {
+    if (!input?.files || input.files.length === 0 || !bearerToken) return;
+
+    const file = input.files[0];
+    setFormItems((prev) => ({
+      ...prev,
+      [key]: { ...prev[key], uploadingFoto: true },
+    }));
+
+    try {
+      // 1. Get presigned URL
+      const presRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${bearerToken}`,
+        },
+        body: JSON.stringify({ fileName: `falla-${key}-${Date.now()}.${file.name.split(".").pop()}`, mimeType: file.type || "image/jpeg" }),
+      });
+      if (!presRes.ok) throw new Error("Error al obtener URL de subida");
+      const presJson = await presRes.json();
+      const { uploadUrl, publicUrl } = presJson.data || presJson;
+
+      // 2. Upload to S3
+      await uploadFileToS3(uploadUrl, file);
+
+      // 3. Update state
       setFormItems((prev) => ({
         ...prev,
-        [key]: { ...prev[key], fotoCapturada: true },
+        [key]: { ...prev[key], fotoCapturada: true, fotoUrl: publicUrl, uploadingFoto: false },
       }));
-      toast.success("Foto capturada");
+      toast.success("Foto subida exitosamente");
+    } catch (err) {
+      setFormItems((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], uploadingFoto: false },
+      }));
+      toast.error(err instanceof Error ? err.message : "Error al subir la foto");
     }
   };
 
@@ -477,11 +619,19 @@ export default function ConductorPreoperativas() {
                 variant={s.fotoCapturada ? "default" : "outline"}
                 size="sm"
                 onClick={() => handlePhotoCapture(item.key)}
+                disabled={s.uploadingFoto}
                 className="gap-1.5"
               >
-                <Camera className="h-3.5 w-3.5" />
-                {s.fotoCapturada ? "Foto capturada" : "Capturar foto"}
+                {s.uploadingFoto ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Camera className="h-3.5 w-3.5" />
+                )}
+                {s.uploadingFoto ? "Subiendo..." : s.fotoCapturada ? "Foto subida" : "Capturar foto"}
               </Button>
+              {s.fotoUrl && (
+                <img src={s.fotoUrl} alt="Evidencia" className="h-10 w-10 rounded object-cover border" />
+              )}
               {!s.observaciones.trim() && (
                 <span className="text-xs text-red-500">* Observaciones requeridas</span>
               )}
@@ -678,6 +828,181 @@ export default function ConductorPreoperativas() {
     );
   }
 
+  // ── Render: Novedades view ──
+  if (showNovedades) {
+    return (
+      <ConductorLayout>
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => setShowNovedades(false)} className="gap-1">
+              <ArrowLeft className="h-4 w-4" />
+              Volver
+            </Button>
+            <div>
+              <h1 className="text-lg font-bold">Novedades Pendientes</h1>
+              <p className="text-sm text-muted-foreground">Correcciones por resolver</p>
+            </div>
+          </div>
+
+          {loadingNovedades ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : novedadesData.length === 0 || totalPendientes === 0 ? (
+            <div className="text-center py-12 bg-card border rounded-lg">
+              <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
+              <p className="font-medium text-muted-foreground">No hay novedades pendientes</p>
+              <p className="text-sm text-muted-foreground mt-1">Todos los items estan al dia</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {novedadesData.map((preop) => {
+                const pendientes = preop.novedades.filter((n) => !n.resuelta);
+                if (pendientes.length === 0) return null;
+
+                return (
+                  <div key={preop._id} className="bg-card border rounded-lg overflow-hidden">
+                    {/* Vehicle header */}
+                    <div className="bg-muted/50 px-4 py-3 border-b flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Car className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-semibold">{preop.vehiculo.placa}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {preop.vehiculo.marca} {preop.vehiculo.linea}
+                        </span>
+                      </div>
+                      <Badge variant="secondary" className="text-xs">
+                        {preop.resumenNovedades.pendientes} pendiente{preop.resumenNovedades.pendientes > 1 ? "s" : ""}
+                      </Badge>
+                    </div>
+
+                    {/* Novedades list */}
+                    <div className="divide-y">
+                      {pendientes.map((novedad) => {
+                        const diasRestantes = Math.ceil(
+                          (new Date(novedad.fechaLimite).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                        );
+                        const colorClass =
+                          diasRestantes > 7
+                            ? "text-green-600 bg-green-50 dark:bg-green-950/30"
+                            : diasRestantes >= 3
+                            ? "text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30"
+                            : "text-red-600 bg-red-50 dark:bg-red-950/30";
+
+                        return (
+                          <div key={novedad._id} className="p-4 space-y-3">
+                            {/* Item name and deadline */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm">
+                                  {ITEM_LABELS[novedad.item] || novedad.item}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {novedad.descripcion}
+                                </p>
+                              </div>
+                              <div className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium shrink-0 ${colorClass}`}>
+                                <Clock className="h-3 w-3" />
+                                {diasRestantes > 0 ? `${diasRestantes} dia${diasRestantes > 1 ? "s" : ""}` : "Vencida"}
+                              </div>
+                            </div>
+
+                            {/* Fault photo */}
+                            {novedad.fotoFalla && (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEnlargedPhoto(novedad.fotoFalla)}
+                                  className="relative group"
+                                >
+                                  <img
+                                    src={novedad.fotoFalla}
+                                    alt="Foto de falla"
+                                    className="h-16 w-16 rounded-md object-cover border cursor-pointer hover:opacity-80 transition-opacity"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 rounded-md">
+                                    <ImageIcon className="h-4 w-4 text-white" />
+                                  </div>
+                                </button>
+                                <span className="text-xs text-muted-foreground">Foto de falla original</span>
+                              </div>
+                            )}
+
+                            {/* Resolve button */}
+                            <div>
+                              <input
+                                ref={(el) => {
+                                  if (novedad._id === resolvingNovedadId) {
+                                    novedadFileInputRef.current = el;
+                                  }
+                                }}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    await handleResolveNovedad(preop._id, novedad._id, file);
+                                  }
+                                  e.target.value = "";
+                                }}
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full gap-2"
+                                disabled={uploadingCorreccion && resolvingNovedadId === novedad._id}
+                                onClick={() => {
+                                  setResolvingNovedadId(novedad._id);
+                                  // Need a slight delay so the ref is assigned
+                                  setTimeout(() => {
+                                    novedadFileInputRef.current?.click();
+                                  }, 50);
+                                }}
+                              >
+                                {uploadingCorreccion && resolvingNovedadId === novedad._id ? (
+                                  <>
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Subiendo...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload className="h-3.5 w-3.5" />
+                                    Subir foto de correccion
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Enlarged photo modal */}
+        {enlargedPhoto && (
+          <div
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+            onClick={() => setEnlargedPhoto(null)}
+          >
+            <img
+              src={enlargedPhoto}
+              alt="Foto ampliada"
+              className="max-w-full max-h-full rounded-lg object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+      </ConductorLayout>
+    );
+  }
+
   // ── Render: Historial view ──
   if (showHistorial) {
     return (
@@ -783,6 +1108,18 @@ export default function ConductorPreoperativas() {
               Selecciona un vehículo para iniciar la inspección
             </p>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => setShowNovedades(true)}
+          >
+            <AlertTriangle className="h-4 w-4" />
+            Novedades
+            {totalPendientes > 0 && (
+              <Badge variant="destructive" className="ml-1 h-5 min-w-[20px] px-1 text-xs">{totalPendientes}</Badge>
+            )}
+          </Button>
           <Button
             variant="ghost"
             size="sm"

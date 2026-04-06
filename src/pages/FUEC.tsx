@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
+import ExcelJS from "exceljs";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
@@ -62,6 +65,8 @@ import {
   QrCode,
   AlertTriangle,
   CheckCircle,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -171,7 +176,7 @@ export default function FUEC() {
       setQrData({
         open: true,
         codigoPublico: c.codigoPublico,
-        label: c.numeroFUEC || `${c.consecutivo}-${c.anio}`,
+        label: c.numeroFUEC || String(c.consecutivo),
         placa: getLabel(c.vehiculo),
         fecha: c.createdAt ? format(new Date(c.createdAt), "dd MMM yyyy", { locale: es }) : undefined,
       });
@@ -192,7 +197,7 @@ export default function FUEC() {
       setQrData({
         open: true,
         codigoPublico: codigo,
-        label: c.numeroFUEC || `${c.consecutivo}-${c.anio}`,
+        label: c.numeroFUEC || String(c.consecutivo),
         placa: getLabel(c.vehiculo),
         fecha: c.createdAt ? format(new Date(c.createdAt), "dd MMM yyyy", { locale: es }) : undefined,
       });
@@ -284,6 +289,179 @@ export default function FUEC() {
     return matchSearch && matchEstado;
   });
 
+  // ── Export dialog state ──
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportType, setExportType] = useState<"excel" | "pdf">("excel");
+  const [exportPlaca, setExportPlaca] = useState("todos");
+  const [exportFechaDesde, setExportFechaDesde] = useState("");
+  const [exportFechaHasta, setExportFechaHasta] = useState("");
+
+  const uniquePlacas = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of contratos) {
+      const p = typeof c.vehiculo === "object" ? c.vehiculo?.placa : c.vehiculo;
+      if (p) set.add(p);
+    }
+    return Array.from(set).sort();
+  }, [contratos]);
+
+  const getExportData = () => {
+    let data = filtered;
+    if (exportPlaca !== "todos") {
+      data = data.filter((c) => {
+        const p = typeof c.vehiculo === "object" ? c.vehiculo?.placa : c.vehiculo;
+        return p === exportPlaca;
+      });
+    }
+    if (exportFechaDesde || exportFechaHasta) {
+      data = data.filter((c) => {
+        const d = c.vigenciaInicio ? format(new Date(c.vigenciaInicio), "yyyy-MM-dd") : "";
+        if (exportFechaDesde && d < exportFechaDesde) return false;
+        if (exportFechaHasta && d > exportFechaHasta) return false;
+        return true;
+      });
+    }
+    return data;
+  };
+
+  // ── Export helpers ──
+
+  function getContratanteNombre(c: ContratoFUEC): string {
+    const ct = c.contratante;
+    if (!ct) return "—";
+    if (typeof ct === "string") return ct;
+    return ct.razonSocial || `${ct.nombres || ""} ${ct.apellidos || ""}`.trim() || "—";
+  }
+
+  function getContratanteId(c: ContratoFUEC): string {
+    const ct = c.contratante;
+    if (!ct) return "—";
+    if (typeof ct === "string") return "—";
+    return ct.identificacion || ct.nit || ct._id || "—";
+  }
+
+  function getConductorNombre(c: ContratoFUEC): string {
+    const cd = c.conductorPrincipal;
+    if (!cd) return "—";
+    if (typeof cd === "string") return cd;
+    return `${cd.nombres || ""} ${cd.apellidos || ""}`.trim() || "—";
+  }
+
+  function getConductorId(c: ContratoFUEC): string {
+    const cd = c.conductorPrincipal;
+    if (!cd) return "—";
+    if (typeof cd === "string") return "—";
+    return cd.identificacion || cd._id || "—";
+  }
+
+  function getVehiculoPlaca(c: ContratoFUEC): string {
+    const v = c.vehiculo;
+    if (!v) return "—";
+    if (typeof v === "string") return v;
+    return v.placa || "—";
+  }
+
+  function getRuta(c: ContratoFUEC): string {
+    if (c.origen && c.destino) return `${c.origen} - ${c.destino}`;
+    return c.ruta || "—";
+  }
+
+  function buildExportRows(items: ContratoFUEC[]) {
+    return items.map((c) => [
+      c.numeroFUEC || String(c.consecutivo),
+      getContratanteNombre(c),
+      getContratanteId(c),
+      getVehiculoPlaca(c),
+      getConductorNombre(c),
+      getConductorId(c),
+      c.objetoContrato || "—",
+      getRuta(c),
+      formatDate(c.vigenciaInicio),
+      formatDate(c.vigenciaFin),
+      c.estado,
+    ]);
+  }
+
+  const exportHeaders = [
+    "N° FUEC",
+    "Contratante",
+    "NIT/CC Contratante",
+    "Vehículo",
+    "Conductor Principal",
+    "Identificación Conductor",
+    "Objeto del Contrato",
+    "Ruta",
+    "Vigencia Desde",
+    "Vigencia Hasta",
+    "Estado",
+  ];
+
+  const handleExportExcel = async () => {
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Contratos FUEC");
+
+      ws.addRow(exportHeaders);
+      const headerRow = ws.getRow(1);
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+      });
+
+      const exportData = getExportData();
+      if (exportData.length === 0) { toast.error("No hay datos para exportar"); return; }
+      const rows = buildExportRows(exportData);
+      rows.forEach((r) => ws.addRow(r));
+
+      exportHeaders.forEach((_, i) => {
+        const col = ws.getColumn(i + 1);
+        col.width = 22;
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const today = format(new Date(), "yyyy-MM-dd");
+      a.href = url;
+      a.download = `fuec_${today}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Excel exportado correctamente");
+    } catch (e) {
+      toast.error("Error al exportar Excel");
+    }
+  };
+
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF({ orientation: "landscape" });
+      doc.setFontSize(16);
+      doc.text("Reporte de Contratos FUEC", 14, 18);
+      doc.setFontSize(10);
+      doc.text(`Generado: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 25);
+
+      const exportData = getExportData();
+      if (exportData.length === 0) { toast.error("No hay datos para exportar"); return; }
+      const rows = buildExportRows(exportData);
+
+      autoTable(doc, {
+        startY: 30,
+        head: [exportHeaders],
+        body: rows,
+        styles: { fontSize: 7, cellPadding: 2 },
+        headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+      });
+
+      const today = format(new Date(), "yyyy-MM-dd");
+      doc.save(`fuec_${today}.pdf`);
+      toast.success("PDF exportado correctamente");
+    } catch (e) {
+      toast.error("Error al exportar PDF");
+    }
+  };
+
   return (
     <DashboardLayout>
       <PageContainer>
@@ -326,6 +504,16 @@ export default function FUEC() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => { setExportType("excel"); setShowExportDialog(true); }} disabled={filtered.length === 0}>
+                <Download className="h-4 w-4" />
+                Exportar Excel
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => { setExportType("pdf"); setShowExportDialog(true); }} disabled={filtered.length === 0}>
+                <FileText className="h-4 w-4" />
+                Exportar PDF
+              </Button>
+            </div>
           </div>
 
           {/* Table */}
@@ -358,7 +546,7 @@ export default function FUEC() {
                     {filtered.map((c) => (
                       <TableRow key={c._id}>
                         <TableCell className="font-mono font-medium text-sm">
-                          {c.numeroFUEC || `${c.consecutivo}-${c.anio}`}
+                          {c.numeroFUEC || String(c.consecutivo)}
                         </TableCell>
                         <TableCell className="text-sm">{getLabel(c.contratante)}</TableCell>
                         <TableCell>
@@ -490,6 +678,54 @@ export default function FUEC() {
           />
         )}
 
+        {/* Export Dialog */}
+        <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {exportType === "excel" ? <FileSpreadsheet className="h-5 w-5 text-green-600" /> : <FileText className="h-5 w-5 text-red-600" />}
+                Exportar {exportType === "excel" ? "Excel" : "PDF"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Vehículo</label>
+                <Select value={exportPlaca} onValueChange={setExportPlaca}>
+                  <SelectTrigger><SelectValue placeholder="Todos los vehículos" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los vehículos</SelectItem>
+                    {uniquePlacas.map((placa) => (
+                      <SelectItem key={placa} value={placa}>{placa}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Fecha desde</label>
+                  <Input type="date" value={exportFechaDesde} onChange={(e) => setExportFechaDesde(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Fecha hasta</label>
+                  <Input type="date" value={exportFechaHasta} onChange={(e) => setExportFechaHasta(e.target.value)} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{getExportData().length} registros para exportar</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowExportDialog(false)}>Cancelar</Button>
+              <Button
+                onClick={() => {
+                  if (exportType === "excel") handleExportExcel(); else handleExportPDF();
+                  setShowExportDialog(false);
+                  setExportPlaca("todos"); setExportFechaDesde(""); setExportFechaHasta("");
+                }}
+                disabled={getExportData().length === 0}
+              >Exportar</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* QR Share Modal */}
         {qrData?.open && (
           <QRShareModal
@@ -514,15 +750,13 @@ export default function FUEC() {
 function FuecDetailDialog({ contrato, onClose }: { contrato: ContratoFUEC; onClose: () => void }) {
   const fields = [
     { label: "N° FUEC", value: contrato.numeroFUEC },
-    { label: "Consecutivo", value: `${contrato.consecutivo} / ${contrato.anio}` },
+    { label: "Consecutivo", value: String(contrato.consecutivo) },
     { label: "Estado", value: contrato.estado, badge: true },
     { label: "Contratante", value: getLabel(contrato.contratante) },
     { label: "Vehículo", value: getLabel(contrato.vehiculo) },
     { label: "Conductor Principal", value: getLabel(contrato.conductorPrincipal) },
     { label: "Objeto del Contrato", value: contrato.objetoContrato || "—" },
-    { label: "Ruta", value: contrato.ruta || "—" },
-    { label: "Origen", value: contrato.origen || "—" },
-    { label: "Destino", value: contrato.destino || "—" },
+    { label: "Ruta", value: contrato.origen && contrato.destino ? `${contrato.origen} → ${contrato.destino}` : (typeof contrato.ruta === "object" ? (contrato.ruta as any)?.recorrido || "—" : (contrato.ruta && contrato.ruta.length === 24 && /^[a-f0-9]+$/.test(contrato.ruta) ? "—" : contrato.ruta || "—")) },
     { label: "Recorrido Específico", value: contrato.recorridoEspecifico || "—" },
     { label: "Vigencia Inicio", value: formatDate(contrato.vigenciaInicio) },
     { label: "Vigencia Fin", value: formatDate(contrato.vigenciaFin) },
@@ -559,22 +793,22 @@ function FuecDetailDialog({ contrato, onClose }: { contrato: ContratoFUEC; onClo
               <p className="text-sm font-semibold mb-3">Documentos del Vehículo (Snapshot)</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {snapshot.soat && (
-                  <SnapshotCard title="SOAT" numero={snapshot.soat.numero} extra={`Vence: ${snapshot.soat.vigencia} — ${snapshot.soat.aseguradora}`} />
+                  <SnapshotCard title="SOAT" numero={snapshot.soat.numero} extra={`Vence: ${formatDate(snapshot.soat.vigencia)} — ${snapshot.soat.aseguradora}`} />
                 )}
                 {snapshot.tecnomecanica && (
-                  <SnapshotCard title="Tecnomecánica" numero={snapshot.tecnomecanica.numero} extra={`Vence: ${snapshot.tecnomecanica.vigencia} — ${snapshot.tecnomecanica.cda}`} />
+                  <SnapshotCard title="Tecnomecánica" numero={snapshot.tecnomecanica.numero} extra={`Vence: ${formatDate(snapshot.tecnomecanica.vigencia)} — ${snapshot.tecnomecanica.cda}`} />
                 )}
                 {snapshot.rce && (
-                  <SnapshotCard title="RCE" numero={snapshot.rce.numero} extra={`Vence: ${snapshot.rce.vigencia}`} />
+                  <SnapshotCard title="RCE" numero={snapshot.rce.numero} extra={`Vence: ${formatDate(snapshot.rce.vigencia)}`} />
                 )}
                 {snapshot.rcc && (
-                  <SnapshotCard title="RCC" numero={snapshot.rcc.numero} extra={`Vence: ${snapshot.rcc.vigencia}`} />
+                  <SnapshotCard title="RCC" numero={snapshot.rcc.numero} extra={`Vence: ${formatDate(snapshot.rcc.vigencia)}`} />
                 )}
                 {snapshot.tarjetaOperacion && (
-                  <SnapshotCard title="Tarjeta Operación" numero={snapshot.tarjetaOperacion.numero} extra={`Vence: ${snapshot.tarjetaOperacion.vigencia}`} />
+                  <SnapshotCard title="Tarjeta Operación" numero={snapshot.tarjetaOperacion.numero} extra={`Vence: ${formatDate(snapshot.tarjetaOperacion.vigencia)}`} />
                 )}
                 {snapshot.licenciaConductor && (
-                  <SnapshotCard title="Licencia Conductor" numero={`${snapshot.licenciaConductor.numero} (${snapshot.licenciaConductor.categoria})`} extra={`Vence: ${snapshot.licenciaConductor.vigencia}`} />
+                  <SnapshotCard title="Licencia Conductor" numero={`${snapshot.licenciaConductor.numero} (${snapshot.licenciaConductor.categoria})`} extra={`Vence: ${formatDate(snapshot.licenciaConductor.vigencia)}`} />
                 )}
               </div>
             </div>
@@ -774,7 +1008,6 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
         vigenciaInicio: form.vigenciaInicio,
         vigenciaFin: form.vigenciaFin,
         consecutivo: form.consecutivo ? Number(form.consecutivo) : undefined,
-        anio: new Date().getFullYear(),
       };
 
       // ruta as inline object { origen, destino, recorrido }

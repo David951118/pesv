@@ -24,6 +24,7 @@ import { useAuth, type AppRole } from "@/hooks/useAuth";
 import { useEmpresaBranding } from "@/hooks/useEmpresaBranding";
 import { getLogoSrc } from "@/assets/logos";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AlertsPopup } from "@/components/dashboard/AlertsPopup";
 
 function getRoleLabel(role: AppRole | null): string {
   switch (role) {
@@ -216,8 +217,9 @@ export function TopNav() {
             </div>
           </div>
 
-          {/* Right side: Theme toggle + User Menu */}
+          {/* Right side: Alerts + Theme toggle + User Menu */}
           <div className="flex items-center gap-2">
+            {(role === "admin" || role === "supervisor") && <AlertsPopup />}
             <ThemeToggle className="text-nav-foreground hover:bg-nav-hover" />
 
             {/* User Menu - Desktop */}

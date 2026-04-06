@@ -11,7 +11,8 @@
       "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/favicon.png)",
       "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/icon-192.png)",
       "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/icon-512.png)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")"
     ]
   }
 }

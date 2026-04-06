@@ -56,11 +56,17 @@ import {
   Calendar,
   QrCode,
   Trash2,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRShareModal } from "@/components/preoperativas/QRShareModal";
+import ExcelJS from "exceljs";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // ── Types ──
 
@@ -136,6 +142,13 @@ export default function Preoperativas() {
   const [fechaHasta, setFechaHasta] = useState("");
   const [viewingPreop, setViewingPreop] = useState<PreoperacionalAPI | null>(null);
   const [expandedVehiculo, setExpandedVehiculo] = useState<string | null>(null);
+
+  // Export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportType, setExportType] = useState<"excel" | "pdf">("excel");
+  const [exportPlaca, setExportPlaca] = useState("todos");
+  const [exportFechaDesde, setExportFechaDesde] = useState("");
+  const [exportFechaHasta, setExportFechaHasta] = useState("");
   const [qrPreop, setQrPreop] = useState<PreoperacionalAPI | null>(null);
 
   const { data: preoperacionales, isLoading } = useQuery({
@@ -201,6 +214,166 @@ export default function Preoperativas() {
     return Array.from(map.entries()).sort((a, b) => a[1].placa.localeCompare(b[1].placa));
   }, [filtered]);
 
+  // ── Unique placas for export filter ──
+  const uniquePlacas = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of preoperacionales || []) set.add(getPlaca(p));
+    return Array.from(set).sort();
+  }, [preoperacionales]);
+
+  // ── Filtered data for export ──
+  const getExportData = () => {
+    let data = filtered;
+    if (exportPlaca !== "todos") {
+      data = data.filter((p) => getPlaca(p) === exportPlaca);
+    }
+    if (exportFechaDesde || exportFechaHasta) {
+      data = data.filter((p) => {
+        const pDate = formatDateShort(p.createdAt);
+        if (exportFechaDesde && pDate < exportFechaDesde) return false;
+        if (exportFechaHasta && pDate > exportFechaHasta) return false;
+        return true;
+      });
+    }
+    return data;
+  };
+
+  // ── Helper to build export rows ──
+  const buildExportRows = (items?: PreoperacionalAPI[]) => {
+    return (items || filtered).map((p) => {
+      const conductor = getConductor(p);
+      const identificacion = typeof p.conductor === "object" && p.conductor
+        ? (p.conductor.tipoId ? `${p.conductor.tipoId} ${p.conductor.identificacion}` : p.conductor.identificacion || "—")
+        : "—";
+      const totalFallas = countFallas(p.seccionDelantera) + countFallas(p.seccionMedia) + countFallas(p.seccionTrasera);
+      return {
+        fecha: p.createdAt ? format(new Date(p.createdAt), "dd/MM/yyyy HH:mm") : "—",
+        placa: getPlaca(p),
+        conductor,
+        identificacion,
+        personaVerificacion: conductor,
+        identificacionVerificador: identificacion,
+        cargo: "Conductor",
+        estado: p.estadoGeneral?.replace("_", " ") || "—",
+        kilometraje: p.kilometraje?.toLocaleString() || "—",
+        totalFallas: String(totalFallas),
+      };
+    });
+  };
+
+  const EXPORT_HEADERS = [
+    "Fecha",
+    "Placa",
+    "Conductor",
+    "Identificación del Conductor",
+    "Persona que verificó",
+    "Identificación verificador",
+    "Cargo",
+    "Estado",
+    "Kilometraje",
+    "Total Fallas",
+  ];
+
+  // ── Excel export ──
+  const handleExportExcel = async () => {
+    const exportData = getExportData();
+    const rows = buildExportRows(exportData);
+    if (rows.length === 0) {
+      toast.error("No hay datos para exportar");
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Preoperacionales");
+
+    // Header row
+    const headerRow = sheet.addRow(EXPORT_HEADERS);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E79" } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+    });
+
+    // Data rows
+    for (const r of rows) {
+      sheet.addRow([
+        r.fecha,
+        r.placa,
+        r.conductor,
+        r.identificacion,
+        r.personaVerificacion,
+        r.identificacionVerificador,
+        r.cargo,
+        r.estado,
+        r.kilometraje,
+        r.totalFallas,
+      ]);
+    }
+
+    // Auto-width columns
+    sheet.columns.forEach((col) => {
+      let maxLen = 12;
+      col.eachCell?.({ includeEmpty: true }, (cell) => {
+        const len = cell.value ? String(cell.value).length + 2 : 10;
+        if (len > maxLen) maxLen = len;
+      });
+      col.width = Math.min(maxLen, 40);
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `preoperacionales_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exportadas ${rows.length} inspecciones a Excel`);
+  };
+
+  // ── PDF export ──
+  const handleExportPDF = () => {
+    const exportData = getExportData();
+    const rows = buildExportRows(exportData);
+    if (rows.length === 0) {
+      toast.error("No hay datos para exportar");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape" });
+
+    // Title
+    doc.setFontSize(16);
+    doc.text("Reporte de Inspecciones Preoperacionales", 14, 18);
+    doc.setFontSize(10);
+    doc.text(`Fecha de generación: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 26);
+    doc.text(`Total registros: ${rows.length}`, 14, 32);
+
+    // Table
+    autoTable(doc, {
+      startY: 38,
+      head: [EXPORT_HEADERS],
+      body: rows.map((r) => [
+        r.fecha,
+        r.placa,
+        r.conductor,
+        r.identificacion,
+        r.personaVerificacion,
+        r.identificacionVerificador,
+        r.cargo,
+        r.estado,
+        r.kilometraje,
+        r.totalFallas,
+      ]),
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [31, 78, 121], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [240, 245, 250] },
+    });
+
+    doc.save(`preoperacionales_${format(new Date(), "yyyy-MM-dd")}.pdf`);
+    toast.success(`Exportadas ${rows.length} inspecciones a PDF`);
+  };
+
   return (
     <DashboardLayout>
       <PageContainer>
@@ -243,6 +416,27 @@ export default function Preoperativas() {
                 >
                   <Truck className="h-4 w-4" />
                   Por Vehículo
+                </Button>
+                <div className="border-l mx-1" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setExportType("excel"); setShowExportDialog(true); }}
+                  className="gap-1.5"
+                  disabled={filtered.length === 0}
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                  Exportar Excel
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setExportType("pdf"); setShowExportDialog(true); }}
+                  className="gap-1.5"
+                  disabled={filtered.length === 0}
+                >
+                  <FileText className="h-4 w-4 text-red-600" />
+                  Exportar PDF
                 </Button>
               </div>
             </div>
@@ -316,6 +510,71 @@ export default function Preoperativas() {
         <PreopDetailDialog preop={viewingPreop} onClose={() => setViewingPreop(null)} />
 
         {/* QR Modal */}
+        {/* Export Dialog */}
+        <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {exportType === "excel" ? <FileSpreadsheet className="h-5 w-5 text-green-600" /> : <FileText className="h-5 w-5 text-red-600" />}
+                Exportar {exportType === "excel" ? "Excel" : "PDF"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Vehículo</label>
+                <Select value={exportPlaca} onValueChange={setExportPlaca}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos los vehículos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los vehículos</SelectItem>
+                    {uniquePlacas.map((placa) => (
+                      <SelectItem key={placa} value={placa}>{placa}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Fecha desde</label>
+                  <Input
+                    type="date"
+                    value={exportFechaDesde}
+                    onChange={(e) => setExportFechaDesde(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Fecha hasta</label>
+                  <Input
+                    type="date"
+                    value={exportFechaHasta}
+                    onChange={(e) => setExportFechaHasta(e.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {getExportData().length} registros para exportar
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowExportDialog(false)}>Cancelar</Button>
+              <Button
+                onClick={() => {
+                  if (exportType === "excel") handleExportExcel();
+                  else handleExportPDF();
+                  setShowExportDialog(false);
+                  setExportPlaca("todos");
+                  setExportFechaDesde("");
+                  setExportFechaHasta("");
+                }}
+                disabled={getExportData().length === 0}
+              >
+                Exportar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {qrPreop?.codigoPublico && (
           <QRShareModal
             open={!!qrPreop}
