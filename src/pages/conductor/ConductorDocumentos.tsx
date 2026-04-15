@@ -567,9 +567,9 @@ function UploadDocDialog({ docTypeKey, docTypeLabel, requiresExpiry, vehiculoId,
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,application/pdf"
-              capture="environment"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
               className="hidden"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
             <Button
@@ -589,9 +589,9 @@ function UploadDocDialog({ docTypeKey, docTypeLabel, requiresExpiry, vehiculoId,
             <input
               ref={fileReversoRef}
               type="file"
-              accept="image/*,application/pdf"
-              capture="environment"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
               className="hidden"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
               onChange={(e) => setFileReverso(e.target.files?.[0] || null)}
             />
             <Button

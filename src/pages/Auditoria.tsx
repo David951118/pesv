@@ -151,7 +151,7 @@ function getEstadoFuecVariant(estado: string): "default" | "secondary" | "outlin
 function getEstadoPreopVariant(estado: string): "default" | "secondary" | "destructive" {
   switch (estado) {
     case "APROBADO": return "default";
-    case "CON_NOVEDAD": return "secondary";
+    case "NOVEDAD": return "secondary";
     case "RECHAZADO": return "destructive";
     default: return "secondary";
   }
@@ -672,7 +672,7 @@ function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerTok
             <SelectContent>
               <SelectItem value="todos">Todos</SelectItem>
               <SelectItem value="APROBADO">Aprobado</SelectItem>
-              <SelectItem value="CON_NOVEDAD">Con Novedad</SelectItem>
+              <SelectItem value="NOVEDAD">Con Novedad</SelectItem>
               <SelectItem value="RECHAZADO">Rechazado</SelectItem>
             </SelectContent>
           </Select>
@@ -821,7 +821,7 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
   ) => {
     if (!section) return null;
     const entries = Object.entries(section);
-    const fallas = entries.filter(([, v]) => v.estado === "FALLA").length;
+    const fallas = entries.filter(([, v]) => v.estado === "MALO").length;
 
     return (
       <div>
@@ -837,23 +837,23 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             <div
               key={key}
               className={`flex items-start gap-2 p-2 rounded-md text-sm ${
-                val.estado === "FALLA"
+                val.estado === "MALO"
                   ? "bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800"
                   : "bg-muted/30"
               }`}
             >
-              {val.estado === "FALLA" ? (
+              {val.estado === "MALO" ? (
                 <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
               ) : (
                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
                 <span className="font-medium">{ITEM_LABELS[key] || key}</span>
-                {val.estado === "FALLA" && val.observaciones && (
+                {val.estado === "MALO" && val.observaciones && (
                   <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{val.observaciones}</p>
                 )}
               </div>
-              <Badge variant={val.estado === "FALLA" ? "destructive" : "default"} className="text-xs shrink-0">
+              <Badge variant={val.estado === "MALO" ? "destructive" : "default"} className="text-xs shrink-0">
                 {val.estado}
               </Badge>
             </div>

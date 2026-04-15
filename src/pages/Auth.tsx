@@ -9,7 +9,7 @@ import { Loader2, AlertCircle, User, Lock } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { z } from "zod";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import loginBackground from "@/assets/login-background.png";
+import loginBackground from "@/assets/login-background.jpeg";
 import logoAsegurar from "@/assets/logos/Asegurar con fecha de creación Png.png";
 
 const authSchema = z.object({

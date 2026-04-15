@@ -37,4 +37,31 @@ export default defineConfig(({ mode }) => ({
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          "query-vendor": ["@tanstack/react-query"],
+          "ui-vendor": [
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-select",
+            "@radix-ui/react-tabs",
+            "@radix-ui/react-toast",
+            "@radix-ui/react-tooltip",
+            "@radix-ui/react-popover",
+            "lucide-react",
+          ],
+          "pdf-vendor": ["jspdf", "jspdf-autotable"],
+          "excel-vendor": ["exceljs"],
+          "chart-vendor": ["recharts"],
+          "map-vendor": ["maplibre-gl"],
+          "date-vendor": ["date-fns"],
+          "form-vendor": ["react-hook-form", "@hookform/resolvers", "zod"],
+        },
+      },
+    },
+  },
 }));

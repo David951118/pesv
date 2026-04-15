@@ -748,6 +748,8 @@ export default function FUEC() {
 // ════════════════════════════════════════════════════
 
 function FuecDetailDialog({ contrato, onClose }: { contrato: ContratoFUEC; onClose: () => void }) {
+  const { bearerToken } = useAuth();
+
   const fields = [
     { label: "N° FUEC", value: contrato.numeroFUEC },
     { label: "Consecutivo", value: String(contrato.consecutivo) },
@@ -769,10 +771,68 @@ function FuecDetailDialog({ contrato, onClose }: { contrato: ContratoFUEC; onClo
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl w-[95vw]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <FileText className="h-5 w-5 text-primary" />
-            Contrato FUEC — {contrato.numeroFUEC}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-3">
+              <FileText className="h-5 w-5 text-primary" />
+              Contrato FUEC — {contrato.numeroFUEC || contrato.consecutivo}
+            </DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                let codigo = contrato.codigoPublico;
+                if (!codigo) {
+                  try {
+                    toast.loading("Obteniendo QR...");
+                    const res = await fetch(`${getApiRndcBaseUrl()}/api/contratos/${contrato._id}/qr`, {
+                      headers: { Authorization: `Bearer ${bearerToken}` },
+                    });
+                    if (!res.ok) throw new Error("No se pudo obtener QR");
+                    const json = await res.json();
+                    const d = json.data ?? json;
+                    codigo = d.codigoPublico || d.qrCodeData?.codigoPublico || (d.qrVerificationUrl ? d.qrVerificationUrl.split("/").pop() : null);
+                    toast.dismiss();
+                  } catch {
+                    toast.dismiss();
+                    toast.error("No se pudo obtener el código público");
+                    return;
+                  }
+                }
+                if (!codigo) {
+                  toast.error("Contrato sin código público");
+                  return;
+                }
+                const iframe = document.createElement("iframe");
+                iframe.style.position = "fixed";
+                iframe.style.right = "0";
+                iframe.style.bottom = "0";
+                iframe.style.width = "0";
+                iframe.style.height = "0";
+                iframe.style.border = "0";
+                iframe.src = `/verificar/contrato/${codigo}`;
+                iframe.onload = () => {
+                  setTimeout(() => {
+                    try {
+                      iframe.contentWindow?.focus();
+                      iframe.contentWindow?.print();
+                    } catch (err) {
+                      console.error("Print error:", err);
+                      toast.error("Error al imprimir");
+                    }
+                    setTimeout(() => {
+                      if (iframe.parentNode) document.body.removeChild(iframe);
+                    }, 1500);
+                  }, 1500);
+                };
+                document.body.appendChild(iframe);
+                toast.success("Preparando PDF...");
+              }}
+              className="gap-2 mr-8"
+            >
+              <Download className="h-4 w-4" />
+              Descargar PDF
+            </Button>
+          </div>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -928,16 +988,23 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
     return t.roles.some((r) => ["CLIENTE", "PROVEEDOR"].includes(r.toUpperCase()));
   });
 
+  const [contratanteErrors, setContratanteErrors] = useState<Record<string, string>>({});
+
+  const validateContratante = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!newContratante.identificacion.trim()) errors.identificacion = "Identificación es requerida";
+    if (newContratante.tipoId === "NIT") {
+      if (!newContratante.razonSocial.trim()) errors.razonSocial = "Razón social es requerida";
+    } else {
+      if (!newContratante.nombres.trim()) errors.nombres = "Nombres es requerido";
+      if (!newContratante.apellidos.trim()) errors.apellidos = "Apellidos es requerido";
+    }
+    setContratanteErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleCreateContratante = async () => {
-    if (!newContratante.identificacion) {
-      toast.error("Identificación es requerida");
-      return;
-    }
-    const hasName = newContratante.razonSocial || (newContratante.nombres && newContratante.apellidos);
-    if (!hasName) {
-      toast.error("Ingrese razón social o nombres y apellidos");
-      return;
-    }
+    if (!validateContratante()) return;
 
     setCreatingContratante(true);
     try {
@@ -994,8 +1061,26 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
 
   const isValid = form.contratante && form.vehiculo && form.conductorPrincipal && form.consecutivo && form.vigenciaInicio && form.vigenciaFin && !dateError && !consecutivoCheck.existe && !consecutivoCheck.checking;
 
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [formTouched, setFormTouched] = useState(false);
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!form.contratante) errors.contratante = "Seleccione un contratante";
+    if (!form.vehiculo) errors.vehiculo = "Seleccione un vehículo";
+    if (!form.conductorPrincipal) errors.conductorPrincipal = "Seleccione un conductor";
+    if (!form.consecutivo?.trim()) errors.consecutivo = "Ingrese el consecutivo";
+    if (!form.vigenciaInicio) errors.vigenciaInicio = "Seleccione fecha de inicio";
+    if (!form.vigenciaFin) errors.vigenciaFin = "Seleccione fecha de fin";
+    if (dateError) errors.vigenciaFin = dateError;
+    if (consecutivoCheck.existe) errors.consecutivo = "Este consecutivo ya existe";
+    setFormErrors(errors);
+    setFormTouched(true);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async () => {
-    if (!isValid) return;
+    if (!validateForm()) return;
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
@@ -1050,10 +1135,10 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
     }
   };
 
-  // Filtered conductores (only those with CONDUCTOR role, or all if no roles info)
+  // Filtered conductores (CONDUCTOR + PROPIETARIO roles can be assigned to contracts)
   const conductores = terceros.filter((t) => {
     if (!t.roles || t.roles.length === 0) return true;
-    return t.roles.some((r) => r.toUpperCase() === "CONDUCTOR");
+    return t.roles.some((r) => ["CONDUCTOR", "PROPIETARIO"].includes(r.toUpperCase()));
   });
 
   return (
@@ -1084,24 +1169,27 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
             </div>
 
             {!showNewContratante ? (
-              <Select value={form.contratante} onValueChange={(v) => updateField("contratante", v)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Seleccionar contratante" />
-                </SelectTrigger>
-                <SelectContent>
-                  {contratanteOptions.map((t) => (
-                    <SelectItem key={t._id} value={t._id}>
-                      {getTerceroLabel(t)}
-                      {t.roles && <span className="text-muted-foreground ml-1 text-xs">({t.roles.join(", ")})</span>}
-                    </SelectItem>
-                  ))}
-                  {contratanteOptions.length === 0 && (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      No hay contratantes disponibles. Cree uno nuevo.
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
+              <>
+                <Select value={form.contratante} onValueChange={(v) => { updateField("contratante", v); setFormErrors((p) => ({ ...p, contratante: "" })); }}>
+                  <SelectTrigger className={`mt-1 ${formTouched && formErrors.contratante ? "border-destructive" : ""}`}>
+                    <SelectValue placeholder="Seleccionar contratante" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contratanteOptions.map((t) => (
+                      <SelectItem key={t._id} value={t._id}>
+                        {getTerceroLabel(t)}
+                        {t.roles && <span className="text-muted-foreground ml-1 text-xs">({t.roles.join(", ")})</span>}
+                      </SelectItem>
+                    ))}
+                    {contratanteOptions.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        No hay contratantes disponibles. Cree uno nuevo.
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+                {formTouched && formErrors.contratante && <p className="text-xs text-destructive mt-0.5">{formErrors.contratante}</p>}
+              </>
             ) : (
               <div className="mt-2 border rounded-lg p-3 bg-muted/20 space-y-3">
                 <p className="text-xs font-semibold text-muted-foreground">Nuevo Contratante</p>
@@ -1138,10 +1226,11 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
                   <Label className="text-xs">Identificación *</Label>
                   <Input
                     value={newContratante.identificacion}
-                    onChange={(e) => setNewContratante((p) => ({ ...p, identificacion: e.target.value }))}
+                    onChange={(e) => { setNewContratante((p) => ({ ...p, identificacion: e.target.value })); setContratanteErrors((p) => ({ ...p, identificacion: "" })); }}
                     placeholder="900123456-1"
-                    className="mt-0.5 h-8 text-sm"
+                    className={`mt-0.5 h-8 text-sm ${contratanteErrors.identificacion ? "border-destructive" : ""}`}
                   />
+                  {contratanteErrors.identificacion && <p className="text-xs text-destructive mt-0.5">{contratanteErrors.identificacion}</p>}
                 </div>
 
                 {newContratante.tipoId === "NIT" ? (
@@ -1149,10 +1238,11 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
                     <Label className="text-xs">Razón Social *</Label>
                     <Input
                       value={newContratante.razonSocial}
-                      onChange={(e) => setNewContratante((p) => ({ ...p, razonSocial: e.target.value }))}
+                      onChange={(e) => { setNewContratante((p) => ({ ...p, razonSocial: e.target.value })); setContratanteErrors((p) => ({ ...p, razonSocial: "" })); }}
                       placeholder="Mi Empresa S.A.S."
-                      className="mt-0.5 h-8 text-sm"
+                      className={`mt-0.5 h-8 text-sm ${contratanteErrors.razonSocial ? "border-destructive" : ""}`}
                     />
+                    {contratanteErrors.razonSocial && <p className="text-xs text-destructive mt-0.5">{contratanteErrors.razonSocial}</p>}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
@@ -1160,17 +1250,19 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
                       <Label className="text-xs">Nombres *</Label>
                       <Input
                         value={newContratante.nombres}
-                        onChange={(e) => setNewContratante((p) => ({ ...p, nombres: e.target.value }))}
-                        className="mt-0.5 h-8 text-sm"
+                        onChange={(e) => { setNewContratante((p) => ({ ...p, nombres: e.target.value })); setContratanteErrors((p) => ({ ...p, nombres: "" })); }}
+                        className={`mt-0.5 h-8 text-sm ${contratanteErrors.nombres ? "border-destructive" : ""}`}
                       />
+                      {contratanteErrors.nombres && <p className="text-xs text-destructive mt-0.5">{contratanteErrors.nombres}</p>}
                     </div>
                     <div>
                       <Label className="text-xs">Apellidos *</Label>
                       <Input
                         value={newContratante.apellidos}
-                        onChange={(e) => setNewContratante((p) => ({ ...p, apellidos: e.target.value }))}
-                        className="mt-0.5 h-8 text-sm"
+                        onChange={(e) => { setNewContratante((p) => ({ ...p, apellidos: e.target.value })); setContratanteErrors((p) => ({ ...p, apellidos: "" })); }}
+                        className={`mt-0.5 h-8 text-sm ${contratanteErrors.apellidos ? "border-destructive" : ""}`}
                       />
+                      {contratanteErrors.apellidos && <p className="text-xs text-destructive mt-0.5">{contratanteErrors.apellidos}</p>}
                     </div>
                   </div>
                 )}
@@ -1214,8 +1306,8 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
           {/* Vehículo */}
           <div>
             <Label>Vehículo *</Label>
-            <Select value={form.vehiculo} onValueChange={(v) => updateField("vehiculo", v)}>
-              <SelectTrigger className="mt-1">
+            <Select value={form.vehiculo} onValueChange={(v) => { updateField("vehiculo", v); setFormErrors((p) => ({ ...p, vehiculo: "" })); }}>
+              <SelectTrigger className={`mt-1 ${formTouched && formErrors.vehiculo ? "border-destructive" : ""}`}>
                 <SelectValue placeholder="Seleccionar vehículo" />
               </SelectTrigger>
               <SelectContent>
@@ -1226,13 +1318,14 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
                 ))}
               </SelectContent>
             </Select>
+            {formTouched && formErrors.vehiculo && <p className="text-xs text-destructive mt-0.5">{formErrors.vehiculo}</p>}
           </div>
 
           {/* Conductor Principal */}
           <div>
             <Label>Conductor Principal *</Label>
-            <Select value={form.conductorPrincipal} onValueChange={(v) => updateField("conductorPrincipal", v)}>
-              <SelectTrigger className="mt-1">
+            <Select value={form.conductorPrincipal} onValueChange={(v) => { updateField("conductorPrincipal", v); setFormErrors((p) => ({ ...p, conductorPrincipal: "" })); }}>
+              <SelectTrigger className={`mt-1 ${formTouched && formErrors.conductorPrincipal ? "border-destructive" : ""}`}>
                 <SelectValue placeholder="Seleccionar conductor" />
               </SelectTrigger>
               <SelectContent>
@@ -1241,6 +1334,7 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
                 ))}
               </SelectContent>
             </Select>
+            {formTouched && formErrors.conductorPrincipal && <p className="text-xs text-destructive mt-0.5">{formErrors.conductorPrincipal}</p>}
           </div>
 
           {/* Objeto del contrato */}
@@ -1279,6 +1373,7 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
                 El consecutivo {form.consecutivo} ya existe (estado: {consecutivoCheck.estado || "—"})
               </p>
             )}
+            {formTouched && formErrors.consecutivo && !consecutivoCheck.existe && <p className="text-xs text-destructive mt-0.5">{formErrors.consecutivo}</p>}
           </div>
 
           {/* Ruta: Origen / Destino / Recorrido */}
@@ -1308,11 +1403,13 @@ function FuecFormDialog({ contrato, bearerToken, empresaId, terceros, vehiculos,
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Vigencia Inicio *</Label>
-              <Input type="date" value={form.vigenciaInicio} onChange={(e) => updateField("vigenciaInicio", e.target.value)} className="mt-1" />
+              <Input type="date" value={form.vigenciaInicio} onChange={(e) => { updateField("vigenciaInicio", e.target.value); setFormErrors((p) => ({ ...p, vigenciaInicio: "" })); }} className={`mt-1 ${formTouched && formErrors.vigenciaInicio ? "border-destructive" : ""}`} />
+              {formTouched && formErrors.vigenciaInicio && <p className="text-xs text-destructive mt-0.5">{formErrors.vigenciaInicio}</p>}
             </div>
             <div>
               <Label>Vigencia Fin *</Label>
-              <Input type="date" value={form.vigenciaFin} onChange={(e) => updateField("vigenciaFin", e.target.value)} min={form.vigenciaInicio || undefined} className="mt-1" />
+              <Input type="date" value={form.vigenciaFin} onChange={(e) => { updateField("vigenciaFin", e.target.value); setFormErrors((p) => ({ ...p, vigenciaFin: "" })); }} min={form.vigenciaInicio || undefined} className={`mt-1 ${formTouched && formErrors.vigenciaFin ? "border-destructive" : ""}`} />
+              {formTouched && formErrors.vigenciaFin && <p className="text-xs text-destructive mt-0.5">{formErrors.vigenciaFin}</p>}
             </div>
           </div>
           {dateError && <p className="text-xs text-destructive">{dateError}</p>}

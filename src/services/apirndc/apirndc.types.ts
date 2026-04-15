@@ -221,7 +221,7 @@ export interface ApiRndcPreoperacional {
   conductor: string | ApiRndcTercero;
   fecha: string;
   kilometraje?: number;
-  estadoGeneral: 'APROBADO' | 'CON_NOVEDAD' | 'RECHAZADO';
+  estadoGeneral: 'APROBADO' | 'NOVEDAD' | 'RECHAZADO';
   observaciones?: string;
   firmadoCheck?: boolean;
   firmaConductorUrl?: string;

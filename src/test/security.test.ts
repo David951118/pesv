@@ -44,10 +44,10 @@ describe("P2 - Security headers", () => {
     expect(html).toContain("Content-Security-Policy");
   });
 
-  it("SEC-19: index.html must have X-Frame-Options DENY", () => {
-    const html = readFile("index.html");
-    expect(html).toContain("X-Frame-Options");
-    expect(html).toContain("DENY");
+  it("SEC-19: vercel.json must set X-Frame-Options DENY via HTTP header", () => {
+    const vercel = readFile("vercel.json");
+    expect(vercel).toContain("X-Frame-Options");
+    expect(vercel).toContain("DENY");
   });
 
   it("SEC-20: index.html must have X-Content-Type-Options", () => {

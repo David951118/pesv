@@ -58,12 +58,16 @@ import {
   Trash2,
   Download,
   FileSpreadsheet,
+  Plus,
   FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRShareModal } from "@/components/preoperativas/QRShareModal";
+import { PreopSeguimiento } from "@/components/preoperativas/PreopSeguimiento";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -83,6 +87,21 @@ interface PreoperacionalAPI {
   seccionDelantera: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionMedia: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionTrasera: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
+  seccionConductor?: {
+    horasSueno: number;
+    estadoSalud: string;
+    tomaMedicamentos: boolean;
+    consumoSustancias: boolean;
+    selfieUrl?: string;
+  };
+  novedades?: Array<{
+    _id: string;
+    item: string;
+    seccion: string;
+    descripcion?: string;
+    estado: string;
+    fechaLimite?: string;
+  }>;
   createdAt?: string;
 }
 
@@ -95,9 +114,10 @@ const ITEM_LABELS: Record<string, string> = {
   espejosRetrovisores: "Espejos Retrovisores", liquidos: "Líquidos", llantaDelanteraDerecha: "Llanta Del. Derecha",
   llantaDelanteraIzquierda: "Llanta Del. Izquierda", bocina: "Bocina", frenos: "Frenos", tablero: "Tablero",
   timon: "Timón", cinturones: "Cinturones", pedales: "Pedales", frenoMano: "Freno de Mano", bateria: "Batería",
-  kitCarretera: "Kit de Carretera", reflectivos: "Reflectivos", stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
+  kitPrimerosAuxilios: "Kit Primeros Auxilios", reflectivos: "Reflectivos", stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
   equipoCarretera: "Equipo de Carretera", llantaTraseraDerecha: "Llanta Tras. Derecha",
   llantaTraseraIzquierda: "Llanta Tras. Izquierda", direccionalesTraseros: "Direccionales Traseros", placa: "Placa",
+  parabrisas: "Parabrisas", extintor: "Extintor", herramienta: "Herramienta",
 };
 
 function getPlaca(p: PreoperacionalAPI): string {
@@ -111,7 +131,7 @@ function getConductor(p: PreoperacionalAPI): string {
 }
 
 function getEstadoBadge(estado: string) {
-  const v = estado === "APROBADO" ? "default" : estado === "CON_NOVEDAD" ? "secondary" : "destructive";
+  const v = estado === "APROBADO" ? "default" : estado === "NOVEDAD" ? "secondary" : "destructive";
   return <Badge variant={v}>{estado?.replace("_", " ")}</Badge>;
 }
 
@@ -127,7 +147,7 @@ function formatDateShort(date?: string) {
 
 function countFallas(section?: Record<string, { estado: string }>): number {
   if (!section) return 0;
-  return Object.values(section).filter((v) => v.estado === "FALLA").length;
+  return Object.values(section).filter((v) => v.estado === "MALO").length;
 }
 
 // ── Main Component ──
@@ -150,6 +170,11 @@ export default function Preoperativas() {
   const [exportFechaDesde, setExportFechaDesde] = useState("");
   const [exportFechaHasta, setExportFechaHasta] = useState("");
   const [qrPreop, setQrPreop] = useState<PreoperacionalAPI | null>(null);
+
+  // Habilitar extra state
+  const [showHabilitarDialog, setShowHabilitarDialog] = useState(false);
+  const [extraVehiculoId, setExtraVehiculoId] = useState("");
+  const [extraMotivo, setExtraMotivo] = useState("");
 
   const { data: preoperacionales, isLoading } = useQuery({
     queryKey: ["preoperacionales-admin"],
@@ -179,6 +204,43 @@ export default function Preoperativas() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const habilitarExtraMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales/habilitar-extra/${extraVehiculoId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearerToken}` },
+        body: JSON.stringify({ motivo: extraMotivo || undefined }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.message || "Error al habilitar preop extra");
+      }
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast.success(data?.message || "Preop extra habilitada");
+      setShowHabilitarDialog(false);
+      setExtraVehiculoId("");
+      setExtraMotivo("");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Today's vehicles for habilitar extra
+  const todayVehiculos = useMemo(() => {
+    if (!preoperacionales) return [];
+    const today = new Date().toISOString().slice(0, 10);
+    const seen = new Map<string, string>();
+    for (const p of preoperacionales) {
+      const pDate = formatDateShort(p.createdAt);
+      if (pDate !== today) continue;
+      const vId = typeof p.vehiculo === "object" ? p.vehiculo?._id : p.vehiculo;
+      const placa = getPlaca(p);
+      if (vId && !seen.has(vId)) seen.set(vId, placa);
+    }
+    return Array.from(seen.entries()).map(([id, placa]) => ({ id, placa }));
+  }, [preoperacionales]);
 
   // Filter
   const filtered = useMemo(() => {
@@ -438,6 +500,16 @@ export default function Preoperativas() {
                   <FileText className="h-4 w-4 text-red-600" />
                   Exportar PDF
                 </Button>
+                <div className="border-l mx-1" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowHabilitarDialog(true)}
+                  className="gap-1.5"
+                >
+                  <Plus className="h-4 w-4 text-blue-600" />
+                  Preop Extra
+                </Button>
               </div>
             </div>
 
@@ -452,7 +524,7 @@ export default function Preoperativas() {
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
                     <SelectItem value="APROBADO">Aprobado</SelectItem>
-                    <SelectItem value="CON_NOVEDAD">Con Novedad</SelectItem>
+                    <SelectItem value="NOVEDAD">Con Novedad</SelectItem>
                     <SelectItem value="RECHAZADO">Rechazado</SelectItem>
                   </SelectContent>
                 </Select>
@@ -570,6 +642,42 @@ export default function Preoperativas() {
                 disabled={getExportData().length === 0}
               >
                 Exportar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Habilitar Preop Extra Dialog */}
+        <Dialog open={showHabilitarDialog} onOpenChange={setShowHabilitarDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Habilitar Preoperacional Extra</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Vehículo con preop hoy *</label>
+                <Select value={extraVehiculoId} onValueChange={setExtraVehiculoId}>
+                  <SelectTrigger><SelectValue placeholder="Seleccione vehículo" /></SelectTrigger>
+                  <SelectContent>
+                    {todayVehiculos.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>{v.placa}</SelectItem>
+                    ))}
+                    {todayVehiculos.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No hay vehículos con preop hoy</div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Motivo (opcional)</label>
+                <Input value={extraMotivo} onChange={(e) => setExtraMotivo(e.target.value)} placeholder="Ej: Cambio de conductor" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setShowHabilitarDialog(false)}>Cancelar</Button>
+              <Button onClick={() => habilitarExtraMutation.mutate()} disabled={!extraVehiculoId || habilitarExtraMutation.isPending}>
+                {habilitarExtraMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Habilitar
               </Button>
             </div>
           </DialogContent>
@@ -704,7 +812,7 @@ function VehiculoView({
       {groups.map(([key, { placa, items }]) => {
         const isExpanded = expandedVehiculo === key;
         const aprobados = items.filter((i) => i.estadoGeneral === "APROBADO").length;
-        const novedades = items.filter((i) => i.estadoGeneral === "CON_NOVEDAD").length;
+        const novedades = items.filter((i) => i.estadoGeneral === "NOVEDAD").length;
         const rechazados = items.filter((i) => i.estadoGeneral === "RECHAZADO").length;
 
         return (
@@ -830,6 +938,35 @@ function VehiculoView({
 // ════════════════════════════════════════
 
 function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null; onClose: () => void }) {
+  const { bearerToken } = useAuth();
+  const queryClient = useQueryClient();
+  const [extenderNovedadId, setExtenderNovedadId] = useState<string | null>(null);
+  const [extenderDias, setExtenderDias] = useState("15");
+  const [extenderMotivo, setExtenderMotivo] = useState("");
+
+  const extenderMutation = useMutation({
+    mutationFn: async ({ novedadId, diasExtra, motivo }: { novedadId: string; diasExtra: number; motivo: string }) => {
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales/${preop?._id}/novedades/${novedadId}/extender`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearerToken}` },
+        body: JSON.stringify({ diasExtra, motivo }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.message || "Error al extender plazo");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Plazo extendido exitosamente");
+      setExtenderNovedadId(null);
+      setExtenderDias("15");
+      setExtenderMotivo("");
+      queryClient.invalidateQueries({ queryKey: ["preoperacionales-admin"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   if (!preop) return null;
 
   const renderSection = (
@@ -838,7 +975,8 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
   ) => {
     if (!section) return null;
     const entries = Object.entries(section);
-    const fallas = entries.filter(([, v]) => v.estado === "FALLA").length;
+    const fallas = entries.filter(([, v]) => v.estado === "MALO").length;
+    const fotoItems = entries.filter(([, v]) => v.estado === "MALO" && v.fotoUrl);
 
     return (
       <div>
@@ -854,28 +992,51 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             <div
               key={key}
               className={`flex items-start gap-2 p-2 rounded-md text-sm ${
-                val.estado === "FALLA"
+                val.estado === "MALO"
                   ? "bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800"
+                  : val.estado === "REGULAR"
+                  ? "bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800"
                   : "bg-muted/30"
               }`}
             >
-              {val.estado === "FALLA" ? (
+              {val.estado === "MALO" ? (
                 <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+              ) : val.estado === "REGULAR" ? (
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
               ) : (
                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
                 <span className="font-medium">{ITEM_LABELS[key] || key}</span>
-                {val.estado === "FALLA" && val.observaciones && (
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{val.observaciones}</p>
+                {(val.estado === "MALO" || val.estado === "REGULAR") && val.observaciones && (
+                  <p className={`text-xs mt-0.5 ${val.estado === "MALO" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>{val.observaciones}</p>
                 )}
               </div>
-              <Badge variant={val.estado === "FALLA" ? "destructive" : "default"} className="text-xs shrink-0">
+              <Badge variant={val.estado === "MALO" ? "destructive" : val.estado === "REGULAR" ? "secondary" : "default"} className="text-xs shrink-0">
                 {val.estado}
               </Badge>
             </div>
           ))}
         </div>
+
+        {/* Fotos de evidencia de fallas */}
+        {fotoItems.length > 0 && (
+          <div className="mt-3 p-3 bg-red-50/50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-xs font-bold text-red-700 dark:text-red-400 mb-2 uppercase tracking-wide">Evidencias fotográficas</p>
+            <div className="flex flex-wrap gap-3">
+              {fotoItems.map(([key, val]) => (
+                <a key={key} href={val.fotoUrl} target="_blank" rel="noreferrer" className="block">
+                  <img
+                    src={val.fotoUrl}
+                    alt={`Evidencia ${ITEM_LABELS[key] || key}`}
+                    className="h-28 w-40 object-cover rounded-lg border-2 border-red-200 dark:border-red-800 shadow-sm hover:scale-105 transition-transform"
+                  />
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium text-center max-w-[10rem] truncate">{ITEM_LABELS[key] || key}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -884,13 +1045,77 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
     <Dialog open={!!preop} onOpenChange={() => onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl w-[95vw]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <ClipboardCheck className="h-5 w-5 text-primary" />
-            Inspección — {getPlaca(preop)}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-3">
+              <ClipboardCheck className="h-5 w-5 text-primary" />
+              Inspección — {getPlaca(preop)}
+            </DialogTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                let codigo = preop.codigoPublico;
+                // Si no hay código público, intentar obtenerlo del detalle completo
+                if (!codigo) {
+                  try {
+                    toast.loading("Obteniendo datos...");
+                    const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales/${preop._id}`, {
+                      headers: { Authorization: `Bearer ${bearerToken}` },
+                    });
+                    if (res.ok) {
+                      const json = await res.json();
+                      const detail = json.data ?? json;
+                      codigo = detail.codigoPublico;
+                    }
+                    toast.dismiss();
+                  } catch {
+                    toast.dismiss();
+                  }
+                }
+                if (!codigo) {
+                  toast.error("No se puede descargar sin código público");
+                  return;
+                }
+                const iframe = document.createElement("iframe");
+                iframe.style.position = "fixed";
+                iframe.style.right = "0";
+                iframe.style.bottom = "0";
+                iframe.style.width = "0";
+                iframe.style.height = "0";
+                iframe.style.border = "0";
+                iframe.src = `/verificar/preoperacional/${codigo}`;
+                iframe.onload = () => {
+                  setTimeout(() => {
+                    try {
+                      iframe.contentWindow?.focus();
+                      iframe.contentWindow?.print();
+                    } catch (err) {
+                      console.error("Print error:", err);
+                      toast.error("Error al imprimir");
+                    }
+                    setTimeout(() => {
+                      if (iframe.parentNode) document.body.removeChild(iframe);
+                    }, 1500);
+                  }, 1500);
+                };
+                document.body.appendChild(iframe);
+                toast.success("Preparando PDF...");
+              }}
+              className="gap-1.5 mr-6"
+            >
+              <Download className="h-4 w-4" />
+              Descargar PDF
+            </Button>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <Tabs defaultValue="detalle" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-3">
+            <TabsTrigger value="detalle">Detalle</TabsTrigger>
+            <TabsTrigger value="seguimiento">Seguimiento</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="detalle" className="space-y-4 mt-0">
           {/* Summary */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-muted/30 rounded-lg p-3">
@@ -936,13 +1161,112 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             </div>
           )}
 
+          {/* Sección Conductor */}
+          {preop.seccionConductor && (
+            <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+              <h4 className="text-sm font-semibold">Sección Conductor</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Horas de Sueño</p>
+                  <p className="font-medium">{preop.seccionConductor.horasSueno}h</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Estado de Salud</p>
+                  <Badge variant={preop.seccionConductor.estadoSalud === "BUENO" ? "default" : preop.seccionConductor.estadoSalud === "REGULAR" ? "secondary" : "destructive"}>
+                    {preop.seccionConductor.estadoSalud}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Medicamentos</p>
+                  <p className="font-medium">{preop.seccionConductor.tomaMedicamentos ? "Sí" : "No"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Sustancias</p>
+                  <p className="font-medium">{preop.seccionConductor.consumoSustancias ? "Sí" : "No"}</p>
+                </div>
+              </div>
+              {preop.seccionConductor.selfieUrl && (
+                <img src={preop.seccionConductor.selfieUrl} alt="Selfie conductor" className="h-20 w-20 rounded-lg object-cover" />
+              )}
+            </div>
+          )}
+
           {/* Sections */}
           <div className="space-y-4 pt-2 border-t">
             {renderSection(preop.seccionDelantera, "Sección Delantera")}
             {renderSection(preop.seccionMedia, "Sección Media")}
             {renderSection(preop.seccionTrasera, "Sección Trasera")}
           </div>
-        </div>
+
+          {/* Novedades */}
+          {preop.novedades && preop.novedades.length > 0 && (
+            <div className="space-y-3 pt-2 border-t">
+              <h4 className="text-sm font-semibold">Novedades</h4>
+              {preop.novedades.map((nov) => (
+                <div key={nov._id} className="bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{ITEM_LABELS[nov.item] || nov.item} — {nov.seccion}</p>
+                      {nov.descripcion && <p className="text-xs text-muted-foreground">{nov.descripcion}</p>}
+                    </div>
+                    <Badge variant={nov.estado === "RESUELTA" ? "default" : "secondary"}>{nov.estado}</Badge>
+                  </div>
+                  {nov.fechaLimite && (
+                    <p className="text-xs text-muted-foreground">Fecha límite: {formatDateTime(nov.fechaLimite)}</p>
+                  )}
+                  {nov.estado !== "RESUELTA" && (
+                    <>
+                      {extenderNovedadId === nov._id ? (
+                        <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 rounded-md p-3 border">
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              min="1"
+                              value={extenderDias}
+                              onChange={(e) => setExtenderDias(e.target.value)}
+                              placeholder="Días extra"
+                              className="w-24"
+                            />
+                            <Input
+                              value={extenderMotivo}
+                              onChange={(e) => setExtenderMotivo(e.target.value)}
+                              placeholder="Motivo (ej: Repuesto en camino)"
+                              className="flex-1"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              disabled={extenderMutation.isPending || !extenderMotivo}
+                              onClick={() => extenderMutation.mutate({ novedadId: nov._id, diasExtra: Number(extenderDias), motivo: extenderMotivo })}
+                            >
+                              {extenderMutation.isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+                              Confirmar
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setExtenderNovedadId(null)}>Cancelar</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setExtenderNovedadId(nov._id)}>
+                          <Calendar className="h-3 w-3" />
+                          Extender Plazo
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          </TabsContent>
+
+          <TabsContent value="seguimiento" className="mt-0">
+            <PreopSeguimiento
+              preopId={preop._id}
+              onUpdate={() => queryClient.invalidateQueries({ queryKey: ["preoperacionales-admin"] })}
+            />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

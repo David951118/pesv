@@ -554,7 +554,7 @@ function UploadPersonalDocDialog({ docTypeKey, docTypeLabel, requiresExpiry, con
           {/* Front file */}
           <div>
             <Label className="text-sm">Documento (frente) *</Label>
-            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" capture="environment" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
             <Button type="button" variant={file ? "default" : "outline"} className="w-full mt-1 gap-2" onClick={() => fileInputRef.current?.click()}>
               <Camera className="h-4 w-4" />
               {file ? file.name.substring(0, 30) + (file.name.length > 30 ? "..." : "") : "Capturar o seleccionar"}
@@ -564,7 +564,7 @@ function UploadPersonalDocDialog({ docTypeKey, docTypeLabel, requiresExpiry, con
           {/* Reverso */}
           <div>
             <Label className="text-sm">Reverso (opcional)</Label>
-            <input ref={fileReversoRef} type="file" accept="image/*,application/pdf" capture="environment" className="hidden" onChange={(e) => setFileReverso(e.target.files?.[0] || null)} />
+            <input ref={fileReversoRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onClick={(e) => { (e.target as HTMLInputElement).value = ''; }} onChange={(e) => setFileReverso(e.target.files?.[0] || null)} />
             <Button type="button" variant={fileReverso ? "default" : "outline"} className="w-full mt-1 gap-2" onClick={() => fileReversoRef.current?.click()}>
               <Camera className="h-4 w-4" />
               {fileReverso ? fileReverso.name.substring(0, 30) + (fileReverso.name.length > 30 ? "..." : "") : "Capturar reverso"}

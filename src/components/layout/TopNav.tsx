@@ -17,6 +17,7 @@ import {
   ScrollText,
   Building2,
   Trash2,
+  BarChart3,
 } from "lucide-react";
 import logoAsegurar from "@/assets/logos/triangulo1 png.png";
 import { cn } from "@/lib/utils";
@@ -74,6 +75,7 @@ const navItems: NavItem[] = [
   { title: "Vehículos", href: "/vehiculos", icon: Car, roles: ["admin", "supervisor"] },
   { title: "Usuarios", href: "/usuarios", icon: Users, roles: ["admin", "supervisor"] },
   { title: "Auditoría", href: "/auditoria", icon: ScrollText, roles: ["admin", "supervisor"] },
+  { title: "Estadísticas", href: "/estadisticas", icon: BarChart3, roles: ["admin", "supervisor"] },
 
   // Admin only
   { title: "Empresas", href: "/empresas", icon: Building2, roles: ["admin"] },
@@ -91,6 +93,7 @@ export function TopNav() {
   const navBrand = role === "admin" ? "Asegurar" : (empresa?.nombreComercial || empresa?.razonSocial || "Asegurar");
 
   const displayName = user?.persona || user?.username || "";
+  const firstName = displayName.split(" ").filter(Boolean)[0] || "";
   const userInitials = displayName.split(" ").filter(Boolean).map(w => w[0]).join("").substring(0, 2).toUpperCase() || "U";
 
   const visibleItems = navItems.filter(item => role && item.roles.includes(role));
@@ -112,7 +115,7 @@ export function TopNav() {
                   <span className="sr-only">Abrir menú</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
+              <SheetContent side="left" className="w-72 p-0 flex flex-col overflow-hidden">
                 <SheetHeader className="p-4 border-b bg-nav">
                   <SheetTitle className="flex items-center gap-3">
                     <img
@@ -120,12 +123,9 @@ export function TopNav() {
                       alt={navBrand}
                       className="h-8 w-auto"
                     />
-                    <span className="text-nav-foreground font-bold text-lg">
-                      {navBrand}
-                    </span>
                   </SheetTitle>
                 </SheetHeader>
-                <div className="py-4">
+                <div className="py-4 overflow-y-auto flex-1 pb-40">
                   {visibleItems.map((item) => {
                     const isActive = location.pathname === item.href;
                     const Icon = item.icon;
@@ -150,7 +150,7 @@ export function TopNav() {
                 </div>
 
                 {/* User info in mobile menu */}
-                <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-muted/50">
+                <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-muted/50 z-10">
                   <div className="flex items-center gap-3 mb-3">
                     <Avatar className="h-10 w-10 border-2 border-primary/20">
                       <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
@@ -158,7 +158,7 @@ export function TopNav() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{displayName}</p>
+                      <p className="text-sm font-medium truncate">{firstName}</p>
                       <p className="text-xs text-muted-foreground">
                         {getRoleLabel(role)}
                       </p>
@@ -182,15 +182,12 @@ export function TopNav() {
 
             {/* Logo */}
             <div className="flex-shrink-0 mr-8">
-              <Link to="/" className="flex items-center gap-3">
+              <Link to="/" className="flex items-center">
                 <img
                   src={navLogo}
                   alt={navBrand}
                   className="h-8 w-auto"
                 />
-                <span className="text-nav-foreground font-bold text-lg tracking-tight hidden sm:block">
-                  {navBrand}
-                </span>
               </Link>
             </div>
 
@@ -235,10 +232,10 @@ export function TopNav() {
                     </AvatarFallback>
                   </Avatar>
                   <div className="hidden sm:flex flex-col items-start">
-                    <span className="text-sm font-medium text-nav-foreground/90">
-                      {displayName}
+                    <span className="text-sm font-medium text-nav-foreground/90 leading-tight">
+                      {firstName}
                     </span>
-                    <span className="text-xs text-nav-foreground/60">
+                    <span className="text-[10px] font-medium text-nav-foreground/60 bg-nav-foreground/10 px-1.5 py-0.5 rounded-full leading-tight">
                       {getRoleLabel(role)}
                     </span>
                   </div>

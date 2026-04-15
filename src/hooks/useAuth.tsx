@@ -10,14 +10,14 @@ const REFRESH_BUFFER_MS = 5 * 60_000;
 
 // ── Role mapping ──
 
-const API_ROLE_MAP: Record<string, { appRole: AppRole; priority: number }> = {
+export const API_ROLE_MAP: Record<string, { appRole: AppRole; priority: number }> = {
   ROLE_ADMIN:        { appRole: "admin",      priority: 3 },
   ROLE_CLIENTE_ADMIN:{ appRole: "supervisor",  priority: 2 },
   ROLE_CLIENTE:      { appRole: "conductor",   priority: 1 },
   ROLE_USER:         { appRole: "conductor",   priority: 0 },
 };
 
-function mapApiRolesToAppRole(apiRoles: string[]): AppRole {
+export function mapApiRolesToAppRole(apiRoles: string[]): AppRole {
   let best: { appRole: AppRole; priority: number } | null = null;
   for (const r of apiRoles) {
     const mapped = API_ROLE_MAP[r];

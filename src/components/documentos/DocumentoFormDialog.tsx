@@ -111,8 +111,10 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFileReverso, setSelectedFileReverso] = useState<File | null>(null);
+  const [selectedFileExtra, setSelectedFileExtra] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadProgressReverso, setUploadProgressReverso] = useState<number | null>(null);
+  const [uploadProgressExtra, setUploadProgressExtra] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const isEditing = !!documento;
   const { bearerToken } = useAuth();
@@ -380,6 +382,35 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
       }
     }
 
+    // Upload extra file to S3 if selected
+    if (selectedFileExtra) {
+      try {
+        setUploadProgressExtra(0);
+        const presignedRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearerToken}` },
+          body: JSON.stringify({ fileName: selectedFileExtra.name, mimeType: selectedFileExtra.type }),
+        });
+        if (!presignedRes.ok) throw new Error(`Error obteniendo URL de subida (extra): ${presignedRes.status}`);
+        const presigned = await presignedRes.json();
+        const { uploadUrl, key, publicUrl } = presigned.data ?? presigned;
+        await uploadFileToS3(uploadUrl, selectedFileExtra, (p) => setUploadProgressExtra(p.percent));
+        setUploadProgressExtra(100);
+        basePayload.archivoExtra = {
+          url: publicUrl,
+          key,
+          mimeType: selectedFileExtra.type,
+          nombreOriginal: selectedFileExtra.name,
+          pesoBytes: selectedFileExtra.size,
+        };
+      } catch (err) {
+        setIsUploading(false);
+        setUploadProgressExtra(null);
+        toast.error(err instanceof Error ? err.message : "Error al subir archivo extra");
+        return;
+      }
+    }
+
     const base = getApiRndcBaseUrl();
     const authHeaders = {
       "Content-Type": "application/json",
@@ -622,6 +653,17 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
               file={selectedFileReverso}
               onFileChange={setSelectedFileReverso}
               uploadProgress={uploadProgressReverso}
+              disabled={isUploading}
+            />
+          </div>
+
+          {/* Archivo adicional (opcional) */}
+          <div className="space-y-2">
+            <Label>Archivo Adicional <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            <FileDropZone
+              file={selectedFileExtra}
+              onFileChange={setSelectedFileExtra}
+              uploadProgress={uploadProgressExtra}
               disabled={isUploading}
             />
           </div>

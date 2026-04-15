@@ -471,9 +471,28 @@ export default function Usuarios() {
     },
   });
 
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+
+  const validateCreateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!terceroForm.nombres.trim()) errors.nombres = "Nombres es requerido";
+    if (!terceroForm.apellidos.trim()) errors.apellidos = "Apellidos es requerido";
+    if (!terceroForm.identificacion.trim()) errors.identificacion = "Identificación es requerida";
+    if (!terceroForm.usuarioCellvi.trim()) errors.usuarioCellvi = "Usuario Cellvi es requerido";
+    if (isAdmin && !terceroForm.empresaId) errors.empresaId = "Seleccione una empresa";
+    setCreateErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleCreateSubmit = () => {
+    if (!validateCreateForm()) return;
+    createTerceroMutation.mutate();
+  };
+
   const resetForm = () => {
     clearTerceroForm();
     clearCreateDialog();
+    setCreateErrors({});
   };
 
   const openEditDialog = (tercero?: TerceroData) => {
@@ -1140,21 +1159,25 @@ export default function Usuarios() {
                 setEmpresaPopoverOpen,
               )}
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label>Nombres *</Label>
                   <Input
                     value={terceroForm.nombres}
-                    onChange={(e) => setTerceroForm({ ...terceroForm, nombres: e.target.value })}
+                    onChange={(e) => { setTerceroForm({ ...terceroForm, nombres: e.target.value }); setCreateErrors((p) => ({ ...p, nombres: "" })); }}
                     placeholder="Nombres"
+                    className={createErrors.nombres ? "border-destructive" : ""}
                   />
+                  {createErrors.nombres && <p className="text-xs text-destructive">{createErrors.nombres}</p>}
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label>Apellidos *</Label>
                   <Input
                     value={terceroForm.apellidos}
-                    onChange={(e) => setTerceroForm({ ...terceroForm, apellidos: e.target.value })}
+                    onChange={(e) => { setTerceroForm({ ...terceroForm, apellidos: e.target.value }); setCreateErrors((p) => ({ ...p, apellidos: "" })); }}
                     placeholder="Apellidos"
+                    className={createErrors.apellidos ? "border-destructive" : ""}
                   />
+                  {createErrors.apellidos && <p className="text-xs text-destructive">{createErrors.apellidos}</p>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1176,22 +1199,26 @@ export default function Usuarios() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label>Identificación *</Label>
                   <Input
                     value={terceroForm.identificacion}
-                    onChange={(e) => setTerceroForm({ ...terceroForm, identificacion: e.target.value })}
+                    onChange={(e) => { setTerceroForm({ ...terceroForm, identificacion: e.target.value }); setCreateErrors((p) => ({ ...p, identificacion: "" })); }}
                     placeholder="Número de documento"
+                    className={createErrors.identificacion ? "border-destructive" : ""}
                   />
+                  {createErrors.identificacion && <p className="text-xs text-destructive">{createErrors.identificacion}</p>}
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label>Usuario Cellvi *</Label>
                 <Input
                   value={terceroForm.usuarioCellvi}
-                  onChange={(e) => setTerceroForm({ ...terceroForm, usuarioCellvi: e.target.value })}
+                  onChange={(e) => { setTerceroForm({ ...terceroForm, usuarioCellvi: e.target.value }); setCreateErrors((p) => ({ ...p, usuarioCellvi: "" })); }}
                   placeholder="Usuario Cellvi"
+                  className={createErrors.usuarioCellvi ? "border-destructive" : ""}
                 />
+                {createErrors.usuarioCellvi && <p className="text-xs text-destructive">{createErrors.usuarioCellvi}</p>}
               </div>
               <div className="space-y-2">
                 <Label>Teléfono</Label>
@@ -1234,16 +1261,8 @@ export default function Usuarios() {
                 Cancelar
               </Button>
               <Button
-                onClick={() => createTerceroMutation.mutate()}
-                disabled={
-                  createTerceroMutation.isPending ||
-                  createPhoto.uploading ||
-                  !terceroForm.identificacion ||
-                  !terceroForm.nombres ||
-                  !terceroForm.apellidos ||
-                  !terceroForm.usuarioCellvi ||
-                  (isAdmin && !terceroForm.empresaId)
-                }
+                onClick={handleCreateSubmit}
+                disabled={createTerceroMutation.isPending || createPhoto.uploading}
               >
                 {createTerceroMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Crear Tercero

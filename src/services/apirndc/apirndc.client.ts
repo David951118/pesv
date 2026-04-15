@@ -14,8 +14,12 @@ async function getToken(): Promise<string> {
   if (cachedToken && Date.now() < tokenExp) return cachedToken;
 
   const base = getApiRndcBaseUrl();
-  const user = import.meta.env.VITE_APIRNDC_DEV_USERNAME || 'rndc';
-  const pass = import.meta.env.VITE_APIRNDC_DEV_PASSWORD || 'rndc2';
+  const user = import.meta.env.VITE_APIRNDC_DEV_USERNAME as string | undefined;
+  const pass = import.meta.env.VITE_APIRNDC_DEV_PASSWORD as string | undefined;
+
+  if (!user || !pass) {
+    throw new Error('ApiRdnc credentials not configured. Set VITE_APIRNDC_DEV_USERNAME and VITE_APIRNDC_DEV_PASSWORD.');
+  }
 
   const res = await fetch(`${base}/api/auth/login`, {
     method: 'POST',

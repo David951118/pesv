@@ -8,29 +8,31 @@ import { es } from "date-fns/locale";
 
 // ── Ordered section keys ──
 const SECCION_DELANTERA = [
-  "luces","direccionalesDelanteros","limpiabrisas","espejosRetrovisores",
+  "luces","direccionalesDelanteros","limpiabrisas","parabrisas","espejosRetrovisores",
   "liquidos","llantaDelanteraDerecha","llantaDelanteraIzquierda","bocina","frenos",
 ];
 const SECCION_MEDIA = [
   "tablero","timon","cinturones","pedales",
-  "frenoMano","bateria","kitCarretera","reflectivos",
+  "frenoMano","bateria","kitPrimerosAuxilios","reflectivos",
 ];
 const SECCION_TRASERA = [
   "stop","llantasRepuesto","equipoCarretera","llantaTraseraDerecha",
-  "llantaTraseraIzquierda","direccionalesTraseros","placa",
+  "llantaTraseraIzquierda","direccionalesTraseros","placa","extintor","herramienta",
 ];
 
 const ITEM_LABELS: Record<string, string> = {
   luces: "Luces", direccionalesDelanteros: "Direccionales Delanteros",
-  limpiabrisas: "Limpiabrisas", espejosRetrovisores: "Espejos Retrovisores",
+  limpiabrisas: "Limpiabrisas", parabrisas: "Parabrisas",
+  espejosRetrovisores: "Espejos Retrovisores",
   liquidos: "Líquidos", llantaDelanteraDerecha: "Llanta Delantera Derecha",
   llantaDelanteraIzquierda: "Llanta Delantera Izquierda", bocina: "Bocina", frenos: "Frenos",
   tablero: "Tablero", timon: "Timón", cinturones: "Cinturones", pedales: "Pedales",
-  frenoMano: "Freno de Mano", bateria: "Batería", kitCarretera: "Kit de Carretera",
+  frenoMano: "Freno de Mano", bateria: "Batería", kitPrimerosAuxilios: "Kit Primeros Auxilios",
   reflectivos: "Reflectivos", stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
   equipoCarretera: "Equipo de Carretera", llantaTraseraDerecha: "Llanta Trasera Derecha",
   llantaTraseraIzquierda: "Llanta Trasera Izquierda",
   direccionalesTraseros: "Direccionales Traseros", placa: "Placa",
+  extintor: "Extintor", herramienta: "Herramienta",
 };
 
 // ── Types ──
@@ -47,6 +49,17 @@ interface PreopVerificado {
   vehiculo?: { placa?: string; numeroInterno?: string; marca?: string; linea?: string; modelo?: string | number };
   conductor?: { nombres?: string; apellidos?: string; identificacion?: string; tipoId?: string; licencia?: string };
   empresa?: { razonSocial?: string; nit?: string };
+  seccionConductor?: {
+    horasSueno?: number;
+    selfieUrl?: string | null;
+    selfieFecha?: string;
+    estadoSalud?: string;
+    estadoSaludObservaciones?: string;
+    tomaMedicamentos?: boolean;
+    medicamentosDetalle?: string;
+    consumoSustancias?: boolean;
+    sustanciasDetalle?: string;
+  };
   seccionDelantera?: SectionMap;
   seccionMedia?: SectionMap;
   seccionTrasera?: SectionMap;
@@ -67,28 +80,28 @@ function formatDateFull(d?: string) {
 }
 
 function countSection(s?: SectionMap) {
-  if (!s) return { ok: 0, fallas: 0, noAplica: 0 };
+  if (!s) return { ok: 0, fallas: 0, regular: 0 };
   const vals = Object.values(s);
-  const fallas = vals.filter(v => v.estado === "FALLA").length;
-  const noAplica = vals.filter(v => v.estado === "NO_APLICA").length;
-  return { ok: vals.length - fallas - noAplica, fallas, noAplica };
+  const fallas = vals.filter(v => v.estado === "MALO").length;
+  const regular = vals.filter(v => v.estado === "REGULAR").length;
+  return { ok: vals.length - fallas - regular, fallas, regular };
 }
 
 // ── Item badge ──
 function ItemBadge({ estado }: { estado: string }) {
-  if (estado === "FALLA") return (
+  if (estado === "MALO") return (
     <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 shrink-0">
-      <XCircle className="h-3 w-3" /> FALLA
+      <XCircle className="h-3 w-3" /> MALO
     </span>
   );
-  if (estado === "NO_APLICA") return (
-    <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 shrink-0">
-      <MinusCircle className="h-3 w-3" /> N/A
+  if (estado === "REGULAR") return (
+    <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 shrink-0">
+      <AlertTriangle className="h-3 w-3" /> REGULAR
     </span>
   );
   return (
     <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 shrink-0">
-      <CheckCircle className="h-3 w-3" /> OK
+      <CheckCircle className="h-3 w-3" /> BUENO
     </span>
   );
 }
@@ -96,8 +109,8 @@ function ItemBadge({ estado }: { estado: string }) {
 // ── Section component ──
 function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[]; data?: SectionMap }) {
   if (!data) return null;
-  const { ok, fallas, noAplica } = countSection(data);
-  const fotoItems = keys.filter(k => data[k]?.estado === "FALLA" && data[k]?.fotoUrl);
+  const { ok, fallas, regular } = countSection(data);
+  const fotoItems = keys.filter(k => data[k]?.estado === "MALO" && data[k]?.fotoUrl);
 
   return (
     <div>
@@ -107,7 +120,7 @@ function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[
         <div className="flex items-center gap-3 text-xs font-semibold">
           <span className="text-green-700">{ok} OK</span>
           {fallas > 0 && <span className="text-red-600">{fallas} falla{fallas > 1 ? "s" : ""}</span>}
-          {noAplica > 0 && <span className="text-gray-400">{noAplica} N/A</span>}
+          {regular > 0 && <span className="text-amber-500">{regular} REGULAR</span>}
         </div>
       </div>
 
@@ -116,7 +129,7 @@ function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[
         {keys.map((key) => {
           const item = data[key];
           if (!item) return null;
-          const isFalla = item.estado === "FALLA";
+          const isFalla = item.estado === "MALO";
           return (
             <div key={key} className={`flex items-start gap-3 px-5 py-2.5 ${isFalla ? "bg-red-50" : ""}`}>
               <div className="flex-1 min-w-0">
@@ -366,6 +379,88 @@ export default function VerificarPreoperacional() {
                   </p>
                 </div>
               </div>
+
+              {/* ── SECCIÓN CONDUCTOR ── */}
+              {data.seccionConductor && (
+                <div className="border-b border-gray-200">
+                  <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
+                    <h2 className="text-sm font-bold text-blue-800 uppercase tracking-wide flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      Estado del Conductor
+                    </h2>
+                  </div>
+                  <div className="px-6 py-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Horas de Sueño</p>
+                        <p className="text-2xl font-black text-gray-800">
+                          {data.seccionConductor.horasSueno ?? "—"}
+                          <span className="text-sm font-medium text-gray-400 ml-1">h</span>
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Estado Salud</p>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full border ${
+                          data.seccionConductor.estadoSalud === "BUENO"
+                            ? "bg-green-100 text-green-700 border-green-200"
+                            : data.seccionConductor.estadoSalud === "REGULAR"
+                            ? "bg-amber-100 text-amber-700 border-amber-200"
+                            : "bg-red-100 text-red-700 border-red-200"
+                        }`}>
+                          {data.seccionConductor.estadoSalud === "BUENO" ? <CheckCircle className="h-3 w-3" /> :
+                           data.seccionConductor.estadoSalud === "REGULAR" ? <AlertTriangle className="h-3 w-3" /> :
+                           <XCircle className="h-3 w-3" />}
+                          {data.seccionConductor.estadoSalud || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Medicamentos</p>
+                        <p className="text-sm font-bold text-gray-800">
+                          {data.seccionConductor.tomaMedicamentos ? "Sí" : "No"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Sustancias</p>
+                        <p className="text-sm font-bold text-gray-800">
+                          {data.seccionConductor.consumoSustancias ? "Sí" : "No"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {data.seccionConductor.estadoSaludObservaciones && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-1">Observaciones de salud</p>
+                        <p className="text-sm text-amber-900">{data.seccionConductor.estadoSaludObservaciones}</p>
+                      </div>
+                    )}
+
+                    {data.seccionConductor.medicamentosDetalle && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Detalle medicamentos</p>
+                        <p className="text-sm text-gray-800">{data.seccionConductor.medicamentosDetalle}</p>
+                      </div>
+                    )}
+
+                    {data.seccionConductor.sustanciasDetalle && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-red-700 mb-1">Detalle sustancias</p>
+                        <p className="text-sm text-red-900">{data.seccionConductor.sustanciasDetalle}</p>
+                      </div>
+                    )}
+
+                    {data.seccionConductor.selfieUrl && (
+                      <div className="mt-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Selfie del conductor</p>
+                        <img
+                          src={data.seccionConductor.selfieUrl}
+                          alt="Selfie conductor"
+                          className="h-32 w-32 object-cover rounded-lg border-2 border-gray-200 shadow-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* ── CHECKLIST ── */}
               <div>

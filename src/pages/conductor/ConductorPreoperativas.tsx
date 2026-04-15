@@ -33,6 +33,7 @@ import {
   Clock,
   ImageIcon,
   Upload,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignaturePad } from "@/components/preoperativas/SignaturePad";
@@ -40,6 +41,15 @@ import { uploadFileToS3 } from "@/lib/uploadToS3";
 import { QRShareModal } from "@/components/preoperativas/QRShareModal";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { Download, Eye } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { PreopSeguimiento } from "@/components/preoperativas/PreopSeguimiento";
 
 // ── Section definitions ──
 
@@ -47,6 +57,7 @@ const SECCION_DELANTERA_ITEMS = [
   { key: "luces", label: "Luces" },
   { key: "direccionalesDelanteros", label: "Direccionales Delanteros" },
   { key: "limpiabrisas", label: "Limpiabrisas" },
+  { key: "parabrisas", label: "Parabrisas" },
   { key: "espejosRetrovisores", label: "Espejos Retrovisores" },
   { key: "liquidos", label: "Líquidos" },
   { key: "llantaDelanteraDerecha", label: "Llanta Delantera Derecha" },
@@ -62,7 +73,7 @@ const SECCION_MEDIA_ITEMS = [
   { key: "pedales", label: "Pedales" },
   { key: "frenoMano", label: "Freno de Mano" },
   { key: "bateria", label: "Batería" },
-  { key: "kitCarretera", label: "Kit de Carretera" },
+  { key: "kitPrimerosAuxilios", label: "Kit Primeros Auxilios" },
   { key: "reflectivos", label: "Reflectivos" },
 ] as const;
 
@@ -74,6 +85,8 @@ const SECCION_TRASERA_ITEMS = [
   { key: "llantaTraseraIzquierda", label: "Llanta Trasera Izquierda" },
   { key: "direccionalesTraseros", label: "Direccionales Traseros" },
   { key: "placa", label: "Placa" },
+  { key: "extintor", label: "Extintor" },
+  { key: "herramienta", label: "Herramienta" },
 ] as const;
 
 const ALL_ITEMS = [
@@ -118,14 +131,24 @@ interface PreopHistorialItem {
   codigoPublico?: string;
   fechaCreacion?: string;
   createdAt?: string;
-  vehiculo?: { placa?: string } | string;
+  vehiculo?: { placa?: string; marca?: string; linea?: string } | string;
+  conductor?: { nombres?: string; apellidos?: string; identificacion?: string } | string;
+  kilometraje?: number;
   estadoGeneral?: string;
-  seccionDelantera?: Record<string, { estado: string }>;
-  seccionMedia?: Record<string, { estado: string }>;
-  seccionTrasera?: Record<string, { estado: string }>;
+  firmadoCheck?: boolean;
+  seccionConductor?: {
+    horasSueno?: number;
+    estadoSalud?: string;
+    estadoSaludObservaciones?: string;
+    tomaMedicamentos?: boolean;
+    consumoSustancias?: boolean;
+  };
+  seccionDelantera?: Record<string, { estado: string; observaciones?: string }>;
+  seccionMedia?: Record<string, { estado: string; observaciones?: string }>;
+  seccionTrasera?: Record<string, { estado: string; observaciones?: string }>;
 }
 
-type ItemEstado = "OK" | "FALLA" | null;
+type ItemEstado = "BUENO" | "REGULAR" | "MALO" | null;
 
 interface ItemState {
   estado: ItemEstado;
@@ -187,6 +210,7 @@ export default function ConductorPreoperativas() {
   // Historial state
   const [showHistorial, setShowHistorial] = useState(false);
   const [qrItem, setQrItem] = useState<PreopHistorialItem | null>(null);
+  const [viewingItem, setViewingItem] = useState<PreopHistorialItem | null>(null);
 
   // Novedades state
   const [showNovedades, setShowNovedades] = useState(false);
@@ -210,6 +234,23 @@ export default function ConductorPreoperativas() {
   );
   const [firmaUrl, setFirmaUrl] = useState<string>("");
   const [uploadingFirma, setUploadingFirma] = useState(false);
+
+  // Seccion Conductor state
+  const [seccionConductor, setSeccionConductor, clearSeccionConductor] = useSessionState("preop-seccion-conductor", {
+    horasSueno: "",
+    selfieUrl: "",
+    selfieFecha: "",
+    estadoSalud: "" as "" | "BUENO" | "REGULAR" | "MALO",
+    estadoSaludObservaciones: "",
+    tomaMedicamentos: false,
+    medicamentosDetalle: "",
+    consumoSustancias: false,
+    sustanciasDetalle: "",
+  });
+
+  // Selfie file input ref
+  const selfieInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingSelfie, setUploadingSelfie] = useState(false);
 
   // Camera refs
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -257,6 +298,22 @@ export default function ConductorPreoperativas() {
       return results;
     },
     enabled: !!bearerToken && cellviVehiculos.length > 0,
+  });
+
+  // ── Fetch ultimo kilometraje when vehicle selected ──
+  const { data: ultimoKm } = useQuery({
+    queryKey: ["ultimo-kilometraje", selectedVehiculo?._id],
+    queryFn: async (): Promise<number | null> => {
+      if (!bearerToken || !selectedVehiculo?._id) return null;
+      const res = await fetch(
+        `${getApiRndcBaseUrl()}/api/preoperacionales/ultimo-kilometraje/${selectedVehiculo._id}`,
+        { headers: { Authorization: `Bearer ${bearerToken}` } }
+      );
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data?.kilometraje ?? null;
+    },
+    enabled: !!bearerToken && !!selectedVehiculo?._id,
   });
 
   // ── Check which vehicles already have a preop today ──
@@ -380,7 +437,7 @@ export default function ConductorPreoperativas() {
       const s = formItems[item.key];
       if (s?.estado) {
         reviewed++;
-        if (s.estado === "FALLA") {
+        if (s.estado === "MALO") {
           fallas++;
           if (!s.observaciones.trim() || !s.fotoCapturada) {
             allValid = false;
@@ -390,11 +447,14 @@ export default function ConductorPreoperativas() {
     }
 
     const kmValid = Number(kilometraje) > 0;
-    const complete = reviewed === TOTAL_ITEMS && allValid && kmValid && firmadoCheck;
+    const conductorValid =
+      Number(seccionConductor.horasSueno) > 0 &&
+      !!seccionConductor.estadoSalud;
+    const complete = reviewed === TOTAL_ITEMS && allValid && kmValid && firmadoCheck && conductorValid;
     return { reviewed, fallas, isFormValid: complete };
-  }, [formItems, kilometraje, firmadoCheck]);
+  }, [formItems, kilometraje, firmadoCheck, seccionConductor]);
 
-  const estadoGeneral = fallas > 0 ? "RECHAZADO" : "APROBADO";
+  const estadoGeneral = fallas > 0 ? "NOVEDAD" : "APROBADO";
 
   // ── Submit mutation ──
   const submitMutation = useMutation({
@@ -411,7 +471,7 @@ export default function ConductorPreoperativas() {
         for (const item of items) {
           const s = formItems[item.key];
           section[item.key] = {
-            estado: s?.estado || "OK",
+            estado: s?.estado || "BUENO",
             observaciones: s?.observaciones || "",
             fotoUrl: s?.fotoUrl || "",
           };
@@ -426,6 +486,17 @@ export default function ConductorPreoperativas() {
         kilometraje: Number(kilometraje),
         firmadoCheck,
         firmaConductorUrl: firmaUrl || undefined,
+        seccionConductor: {
+          horasSueno: Number(seccionConductor.horasSueno),
+          selfieUrl: seccionConductor.selfieUrl || undefined,
+          selfieFecha: seccionConductor.selfieFecha || undefined,
+          estadoSalud: seccionConductor.estadoSalud || "BUENO",
+          estadoSaludObservaciones: seccionConductor.estadoSaludObservaciones || undefined,
+          tomaMedicamentos: seccionConductor.tomaMedicamentos,
+          medicamentosDetalle: seccionConductor.medicamentosDetalle || undefined,
+          consumoSustancias: seccionConductor.consumoSustancias,
+          sustanciasDetalle: seccionConductor.sustanciasDetalle || undefined,
+        },
         seccionDelantera: buildSection(SECCION_DELANTERA_ITEMS),
         seccionMedia: buildSection(SECCION_MEDIA_ITEMS),
         seccionTrasera: buildSection(SECCION_TRASERA_ITEMS),
@@ -442,7 +513,9 @@ export default function ConductorPreoperativas() {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
-        throw new Error(errData?.message || "Error al enviar la preoperacional");
+        const error: any = new Error(errData?.message || "Error al enviar la preoperacional");
+        error.status = res.status;
+        throw error;
       }
 
       return res.json();
@@ -452,12 +525,17 @@ export default function ConductorPreoperativas() {
       clearFormItems();
       clearKilometraje();
       clearFirmadoCheck();
+      clearSeccionConductor();
       setFirmaUrl("");
       setSelectedVehiculo(null);
       queryClient.invalidateQueries({ queryKey: ["conductor-preop-hoy"] });
     },
-    onError: (error: Error) => {
-      toast.error(error.message);
+    onError: (error: any) => {
+      if (error.status === 409) {
+        toast.error("Ya existe una preoperacional para este vehículo hoy. Contacte al administrador para habilitar una extra.");
+      } else {
+        toast.error(error.message);
+      }
     },
   });
 
@@ -503,7 +581,7 @@ export default function ConductorPreoperativas() {
         ...prev[key],
         estado,
         // If switching to OK, clear falla data
-        ...(estado === "OK" ? { observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false } : {}),
+        ...(estado === "BUENO" ? { observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false } : {}),
       },
     }));
   };
@@ -572,35 +650,58 @@ export default function ConductorPreoperativas() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setItemEstado(item.key, "OK")}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                s.estado === "OK"
+              onClick={() => setItemEstado(item.key, "BUENO")}
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                s.estado === "BUENO"
                   ? "bg-green-600 text-white"
                   : "bg-muted text-muted-foreground hover:bg-green-100"
               }`}
             >
               <CheckCircle className="h-3.5 w-3.5 inline mr-1" />
-              OK
+              BUENO
             </button>
             <button
               type="button"
-              onClick={() => setItemEstado(item.key, "FALLA")}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                s.estado === "FALLA"
+              onClick={() => setItemEstado(item.key, "REGULAR")}
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                s.estado === "REGULAR"
+                  ? "bg-amber-500 text-white"
+                  : "bg-muted text-muted-foreground hover:bg-amber-100"
+              }`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5 inline mr-1" />
+              REGULAR
+            </button>
+            <button
+              type="button"
+              onClick={() => setItemEstado(item.key, "MALO")}
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                s.estado === "MALO"
                   ? "bg-red-600 text-white"
                   : "bg-muted text-muted-foreground hover:bg-red-100"
               }`}
             >
               <XCircle className="h-3.5 w-3.5 inline mr-1" />
-              FALLA
+              MALO
             </button>
           </div>
         </div>
 
-        {s.estado === "FALLA" && (
+        {s.estado === "REGULAR" && (
           <div className="space-y-2 pt-2 border-t">
             <textarea
-              placeholder="Describa la falla encontrada (obligatorio)"
+              placeholder="Observaciones (opcional)"
+              value={s.observaciones}
+              onChange={(e) => setItemObservaciones(item.key, e.target.value)}
+              className="w-full min-h-[40px] text-sm p-2 rounded-md border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        )}
+
+        {s.estado === "MALO" && (
+          <div className="space-y-2 pt-2 border-t">
+            <textarea
+              placeholder="Describa el problema encontrado (obligatorio)"
               value={s.observaciones}
               onChange={(e) => setItemObservaciones(item.key, e.target.value)}
               className="w-full min-h-[60px] text-sm p-2 rounded-md border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
@@ -612,6 +713,7 @@ export default function ConductorPreoperativas() {
                 accept="image/*"
                 title="Capturar foto de evidencia"
                 className="hidden"
+                onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                 onChange={() => onFileSelected(item.key)}
               />
               <Button
@@ -651,7 +753,7 @@ export default function ConductorPreoperativas() {
     let fail = 0;
     for (const item of items) {
       if (formItems[item.key]?.estado) done++;
-      if (formItems[item.key]?.estado === "FALLA") fail++;
+      if (formItems[item.key]?.estado === "MALO") fail++;
     }
     return (
       <span className="flex gap-1.5 ml-auto mr-2">
@@ -730,15 +832,237 @@ export default function ConductorPreoperativas() {
             <label className="text-sm font-medium mb-1 block">Kilometraje actual</label>
             <Input
               type="number"
-              placeholder="Ingrese el kilometraje"
+              placeholder={ultimoKm ? `Último: ${ultimoKm.toLocaleString("es-CO")} km` : "Ingrese el kilometraje"}
               value={kilometraje}
               onChange={(e) => setKilometraje(e.target.value)}
               min={1}
             />
+            {ultimoKm != null && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Ultimo: {ultimoKm.toLocaleString("es-CO")} km
+              </p>
+            )}
           </div>
 
           {/* Accordion sections */}
-          <Accordion type="multiple" defaultValue={["delantera", "media", "trasera"]} className="space-y-2">
+          <Accordion type="multiple" defaultValue={["conductor", "delantera", "media", "trasera"]} className="space-y-2">
+            {/* Seccion Conductor */}
+            <AccordionItem value="conductor" className="bg-card border rounded-lg px-3">
+              <AccordionTrigger className="hover:no-underline">
+                <span className="text-sm font-semibold flex items-center gap-1.5">
+                  <User className="h-4 w-4" />
+                  Seccion Conductor
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-4">
+                  {/* Horas de sueno */}
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Horas de sueno *</label>
+                    <Input
+                      type="number"
+                      placeholder="Ej: 8"
+                      value={seccionConductor.horasSueno}
+                      onChange={(e) => setSeccionConductor((prev) => ({ ...prev, horasSueno: e.target.value }))}
+                      min={0}
+                      max={24}
+                    />
+                    {seccionConductor.horasSueno !== "" && Number(seccionConductor.horasSueno) <= 0 && (
+                      <p className="text-xs text-red-500 mt-1">* Debe ser mayor a 0</p>
+                    )}
+                  </div>
+
+                  {/* Selfie */}
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Selfie <span className="text-muted-foreground font-normal">(opcional)</span></label>
+                    <input
+                      ref={selfieInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="user"
+                      className="hidden"
+                      onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file || !bearerToken) return;
+                        setUploadingSelfie(true);
+                        try {
+                          const presRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                              Authorization: `Bearer ${bearerToken}`,
+                            },
+                            body: JSON.stringify({
+                              fileName: `selfie-conductor-${Date.now()}.${file.name.split(".").pop()}`,
+                              mimeType: file.type || "image/jpeg",
+                            }),
+                          });
+                          if (!presRes.ok) throw new Error("Error al obtener URL de subida");
+                          const presJson = await presRes.json();
+                          const { uploadUrl, publicUrl } = presJson.data || presJson;
+                          await uploadFileToS3(uploadUrl, file);
+                          setSeccionConductor((prev) => ({
+                            ...prev,
+                            selfieUrl: publicUrl,
+                            selfieFecha: new Date().toISOString(),
+                          }));
+                          toast.success("Selfie subida exitosamente");
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : "Error al subir selfie");
+                        } finally {
+                          setUploadingSelfie(false);
+                        }
+                      }}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={seccionConductor.selfieUrl ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => selfieInputRef.current?.click()}
+                        disabled={uploadingSelfie}
+                        className="gap-1.5"
+                      >
+                        {uploadingSelfie ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Camera className="h-3.5 w-3.5" />
+                        )}
+                        {uploadingSelfie ? "Subiendo..." : seccionConductor.selfieUrl ? "Selfie subida" : "Tomar selfie"}
+                      </Button>
+                      {seccionConductor.selfieUrl && (
+                        <img src={seccionConductor.selfieUrl} alt="Selfie" className="h-10 w-10 rounded object-cover border" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Estado de salud */}
+                  <div>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-3">
+                      <p className="text-sm text-blue-900 dark:text-blue-100">
+                        En la ejecución del presente documento digital (preoperacional),
+                        manifiesto que mi estado de salud es:
+                      </p>
+                    </div>
+                    <label className="text-sm font-medium mb-1 block">Estado de salud *</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSeccionConductor((prev) => ({ ...prev, estadoSalud: "BUENO", estadoSaludObservaciones: "" }))}
+                        className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                          seccionConductor.estadoSalud === "BUENO"
+                            ? "bg-green-600 text-white"
+                            : "bg-muted text-muted-foreground hover:bg-green-100"
+                        }`}
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 inline mr-1" />
+                        BUENO
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSeccionConductor((prev) => ({ ...prev, estadoSalud: "REGULAR" }))}
+                        className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                          seccionConductor.estadoSalud === "REGULAR"
+                            ? "bg-amber-500 text-white"
+                            : "bg-muted text-muted-foreground hover:bg-amber-100"
+                        }`}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 inline mr-1" />
+                        REGULAR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSeccionConductor((prev) => ({ ...prev, estadoSalud: "MALO" }))}
+                        className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                          seccionConductor.estadoSalud === "MALO"
+                            ? "bg-red-600 text-white"
+                            : "bg-muted text-muted-foreground hover:bg-red-100"
+                        }`}
+                      >
+                        <XCircle className="h-3.5 w-3.5 inline mr-1" />
+                        MALO
+                      </button>
+                    </div>
+                    {!seccionConductor.estadoSalud && (
+                      <p className="text-xs text-red-500 mt-1">* Seleccione un estado</p>
+                    )}
+                  </div>
+
+                  {/* Observaciones de salud (shown if REGULAR or MALO) */}
+                  {(seccionConductor.estadoSalud === "REGULAR" || seccionConductor.estadoSalud === "MALO") && (
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">
+                        Sírvase explicar el porqué para la anotación *
+                      </label>
+                      <textarea
+                        placeholder="Describa las razones de su estado de salud actual"
+                        value={seccionConductor.estadoSaludObservaciones}
+                        onChange={(e) => setSeccionConductor((prev) => ({ ...prev, estadoSaludObservaciones: e.target.value }))}
+                        className="w-full min-h-[80px] text-sm p-2 rounded-md border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+                  )}
+
+                  {/* Toma medicamentos */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="tomaMedicamentos"
+                        checked={seccionConductor.tomaMedicamentos}
+                        onCheckedChange={(checked) =>
+                          setSeccionConductor((prev) => ({
+                            ...prev,
+                            tomaMedicamentos: checked === true,
+                            medicamentosDetalle: checked === true ? prev.medicamentosDetalle : "",
+                          }))
+                        }
+                      />
+                      <label htmlFor="tomaMedicamentos" className="text-sm font-medium cursor-pointer">
+                        Toma medicamentos?
+                      </label>
+                    </div>
+                    {seccionConductor.tomaMedicamentos && (
+                      <textarea
+                        placeholder="Detalle los medicamentos que toma"
+                        value={seccionConductor.medicamentosDetalle}
+                        onChange={(e) => setSeccionConductor((prev) => ({ ...prev, medicamentosDetalle: e.target.value }))}
+                        className="w-full min-h-[60px] text-sm p-2 rounded-md border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    )}
+                  </div>
+
+                  {/* Consumo de sustancias */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="consumoSustancias"
+                        checked={seccionConductor.consumoSustancias}
+                        onCheckedChange={(checked) =>
+                          setSeccionConductor((prev) => ({
+                            ...prev,
+                            consumoSustancias: checked === true,
+                            sustanciasDetalle: checked === true ? prev.sustanciasDetalle : "",
+                          }))
+                        }
+                      />
+                      <label htmlFor="consumoSustancias" className="text-sm font-medium cursor-pointer">
+                        Consumo de sustancias?
+                      </label>
+                    </div>
+                    {seccionConductor.consumoSustancias && (
+                      <textarea
+                        placeholder="Detalle las sustancias consumidas"
+                        value={seccionConductor.sustanciasDetalle}
+                        onChange={(e) => setSeccionConductor((prev) => ({ ...prev, sustanciasDetalle: e.target.value }))}
+                        className="w-full min-h-[60px] text-sm p-2 rounded-md border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    )}
+                  </div>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
             <AccordionItem value="delantera" className="bg-card border rounded-lg px-3">
               <AccordionTrigger className="hover:no-underline">
                 <span className="text-sm font-semibold">Sección Delantera</span>
@@ -776,6 +1100,27 @@ export default function ConductorPreoperativas() {
             </AccordionItem>
           </Accordion>
 
+          {/* Declaración final previa a la firma */}
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-2">
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+              Declaración de Responsabilidad
+            </p>
+            <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+              Declaro bajo la gravedad del juramento que la información consignada en el presente
+              documento digital (preoperacional) es verídica y corresponde al estado real del
+              vehículo y a mi estado físico y mental al momento de iniciar la operación. Asumo la
+              responsabilidad total de los datos aquí registrados y entiendo que cualquier omisión
+              o falsedad puede acarrear consecuencias disciplinarias, administrativas y legales
+              conforme a la normatividad vigente en Colombia y a las políticas internas de la empresa.
+            </p>
+            <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+              Al firmar este documento, certifico que soy el conductor asignado al vehículo,
+              que los datos biométricos y de identificación aquí registrados son míos, y que
+              la firma capturada a continuación es auténtica y efectuada por mí de manera
+              voluntaria y consciente.
+            </p>
+          </div>
+
           {/* Firma digital */}
           <SignaturePad
             onSignatureReady={handleSignatureReady}
@@ -784,7 +1129,7 @@ export default function ConductorPreoperativas() {
             signed={!!firmaUrl}
           />
 
-          {/* Declaración */}
+          {/* Declaración checkbox */}
           <div className="bg-card border rounded-lg p-3 flex items-start gap-3">
             <Checkbox
               id="firmadoCheck"
@@ -794,7 +1139,8 @@ export default function ConductorPreoperativas() {
               className="mt-0.5"
             />
             <label htmlFor="firmadoCheck" className="text-sm cursor-pointer">
-              Declaro que la información registrada es verídica y corresponde al estado actual del vehículo.
+              He leído y acepto la declaración de responsabilidad. Confirmo que la información
+              registrada es verídica y que soy el responsable directo de la firma.
             </label>
           </div>
 
@@ -814,12 +1160,16 @@ export default function ConductorPreoperativas() {
 
           {!isFormValid && (
             <p className="text-xs text-muted-foreground text-center">
-              {reviewed < TOTAL_ITEMS
+              {!(Number(seccionConductor.horasSueno) > 0)
+                ? "Ingrese las horas de sueño"
+                : !seccionConductor.estadoSalud
+                ? "Seleccione el estado de salud"
+                : reviewed < TOTAL_ITEMS
                 ? `Faltan ${TOTAL_ITEMS - reviewed} items por revisar`
                 : !Number(kilometraje)
                 ? "Ingrese el kilometraje"
                 : !firmadoCheck
-                ? "Debe firmar la declaración"
+                ? "Debe firmar la declaracion"
                 : "Complete las observaciones y fotos de los items con falla"}
             </p>
           )}
@@ -1003,6 +1353,38 @@ export default function ConductorPreoperativas() {
     );
   }
 
+  // ── Print individual historial PDF via iframe+print (QR public view) ──
+  const handlePrintHistorial = (item: PreopHistorialItem) => {
+    if (!item.codigoPublico) {
+      toast.error("No se puede descargar sin código público");
+      return;
+    }
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.src = `/verificar/preoperacional/${item.codigoPublico}`;
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (err) {
+          console.error("Print error:", err);
+          toast.error("Error al imprimir");
+        }
+        setTimeout(() => {
+          if (iframe.parentNode) document.body.removeChild(iframe);
+        }, 1500);
+      }, 1500);
+    };
+    document.body.appendChild(iframe);
+    toast.success("Preparando PDF...");
+  };
+
   // ── Render: Historial view ──
   if (showHistorial) {
     return (
@@ -1035,43 +1417,63 @@ export default function ConductorPreoperativas() {
                 const fecha = item.fechaCreacion || item.createdAt;
                 const placa = typeof item.vehiculo === "object" ? item.vehiculo?.placa : item.vehiculo;
                 const fallas =
-                  Object.values(item.seccionDelantera || {}).filter((v) => v.estado === "FALLA").length +
-                  Object.values(item.seccionMedia || {}).filter((v) => v.estado === "FALLA").length +
-                  Object.values(item.seccionTrasera || {}).filter((v) => v.estado === "FALLA").length;
+                  Object.values(item.seccionDelantera || {}).filter((v) => v.estado === "MALO").length +
+                  Object.values(item.seccionMedia || {}).filter((v) => v.estado === "MALO").length +
+                  Object.values(item.seccionTrasera || {}).filter((v) => v.estado === "MALO").length;
 
                 return (
-                  <div key={item._id} className="bg-card border rounded-lg p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-foreground">{placa || "—"}</span>
-                          {item.estadoGeneral && (
-                            <Badge variant={item.estadoGeneral === "APROBADO" ? "default" : item.estadoGeneral === "CON_NOVEDAD" ? "secondary" : "destructive"}>
-                              {item.estadoGeneral.replace("_", " ")}
-                            </Badge>
-                          )}
-                          {fallas > 0 && (
-                            <span className="inline-flex items-center gap-1 text-red-600 text-xs font-medium">
-                              <XCircle className="h-3 w-3" />
-                              {fallas} falla{fallas > 1 ? "s" : ""}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {fecha ? format(new Date(fecha), "dd MMM yyyy, HH:mm", { locale: es }) : "—"}
-                        </p>
-                      </div>
-                      {item.codigoPublico && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5 shrink-0"
-                          onClick={() => setQrItem(item)}
-                        >
-                          <QrCode className="h-3.5 w-3.5" />
-                          QR
-                        </Button>
+                  <div key={item._id} className="bg-card border rounded-lg p-3 space-y-3">
+                    {/* Top row: placa + estado */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-foreground text-base">{placa || "—"}</span>
+                      {item.estadoGeneral && (
+                        <Badge variant={item.estadoGeneral === "APROBADO" ? "default" : item.estadoGeneral === "NOVEDAD" ? "secondary" : "destructive"} className="text-[10px]">
+                          {item.estadoGeneral.replace("_", " ")}
+                        </Badge>
                       )}
+                      {fallas > 0 && (
+                        <span className="inline-flex items-center gap-1 text-red-600 text-xs font-medium">
+                          <XCircle className="h-3 w-3" />
+                          {fallas}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Date */}
+                    <p className="text-xs text-muted-foreground">
+                      {fecha ? format(new Date(fecha), "dd MMM yyyy, HH:mm", { locale: es }) : "—"}
+                    </p>
+
+                    {/* Actions: 3 buttons grid */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 h-9 text-xs px-2"
+                        onClick={() => setViewingItem(item)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Ver
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 h-9 text-xs px-2"
+                        onClick={() => handlePrintHistorial(item)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        PDF
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 h-9 text-xs px-2"
+                        onClick={() => item.codigoPublico && setQrItem(item)}
+                        disabled={!item.codigoPublico}
+                      >
+                        <QrCode className="h-3.5 w-3.5" />
+                        QR
+                      </Button>
                     </div>
                   </div>
                 );
@@ -1081,6 +1483,154 @@ export default function ConductorPreoperativas() {
         </div>
 
         {/* QR Modal */}
+        {/* Detail Dialog — same format as admin view */}
+        <Dialog open={!!viewingItem} onOpenChange={() => setViewingItem(null)}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl w-[95vw]">
+            <DialogHeader>
+              <div className="flex items-center justify-between">
+                <DialogTitle className="flex items-center gap-3">
+                  <ClipboardCheck className="h-5 w-5 text-primary" />
+                  Inspección — {viewingItem && typeof viewingItem.vehiculo === "object" ? viewingItem.vehiculo?.placa : viewingItem?.vehiculo || "—"}
+                </DialogTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => viewingItem && handlePrintHistorial(viewingItem)}
+                  className="gap-1.5 mr-6"
+                >
+                  <Download className="h-4 w-4" />
+                  PDF
+                </Button>
+              </div>
+            </DialogHeader>
+
+            {viewingItem && (
+              <Tabs defaultValue="detalle" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="detalle">Detalle</TabsTrigger>
+                  <TabsTrigger value="seguimiento">Seguimiento</TabsTrigger>
+                </TabsList>
+                <TabsContent value="detalle" className="space-y-4 mt-4">
+                {/* Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground">Vehículo</p>
+                    <p className="font-semibold">{typeof viewingItem.vehiculo === "object" ? viewingItem.vehiculo?.placa : viewingItem.vehiculo || "—"}</p>
+                  </div>
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground">Conductor</p>
+                    <p className="font-semibold text-sm">{user?.persona || user?.username || "—"}</p>
+                  </div>
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground">Kilometraje</p>
+                    <p className="font-semibold">{viewingItem.kilometraje?.toLocaleString() || "—"} km</p>
+                  </div>
+                  <div className="bg-muted/30 rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground">Estado</p>
+                    <div className="mt-1">
+                      <Badge variant={viewingItem.estadoGeneral === "APROBADO" ? "default" : viewingItem.estadoGeneral === "NOVEDAD" ? "secondary" : "destructive"}>
+                        {viewingItem.estadoGeneral?.replace("_", " ") || "—"}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span>Firmado: <strong className="text-foreground">{viewingItem.firmadoCheck ? "Sí" : "No"}</strong></span>
+                  <span>Fecha: <strong className="text-foreground">{(viewingItem.fechaCreacion || viewingItem.createdAt) ? format(new Date((viewingItem.fechaCreacion || viewingItem.createdAt)!), "dd MMM yyyy HH:mm", { locale: es }) : "—"}</strong></span>
+                </div>
+
+                {/* Sección Conductor */}
+                {viewingItem.seccionConductor && (
+                  <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                    <h4 className="text-sm font-semibold">Sección Conductor</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Horas de Sueño</p>
+                        <p className="font-medium">{viewingItem.seccionConductor.horasSueno}h</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Estado de Salud</p>
+                        <Badge variant={viewingItem.seccionConductor.estadoSalud === "BUENO" ? "default" : viewingItem.seccionConductor.estadoSalud === "REGULAR" ? "secondary" : "destructive"}>
+                          {viewingItem.seccionConductor.estadoSalud}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Medicamentos</p>
+                        <p className="font-medium">{viewingItem.seccionConductor.tomaMedicamentos ? "Sí" : "No"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Sustancias</p>
+                        <p className="font-medium">{viewingItem.seccionConductor.consumoSustancias ? "Sí" : "No"}</p>
+                      </div>
+                    </div>
+                    {viewingItem.seccionConductor.estadoSaludObservaciones && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        <strong>Observaciones:</strong> {viewingItem.seccionConductor.estadoSaludObservaciones}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Sections */}
+                <div className="space-y-4 pt-2 border-t">
+                  {([
+                    { title: "Sección Delantera", data: viewingItem.seccionDelantera },
+                    { title: "Sección Media", data: viewingItem.seccionMedia },
+                    { title: "Sección Trasera", data: viewingItem.seccionTrasera },
+                  ] as const).map(({ title, data }) => {
+                    if (!data) return null;
+                    const entries = Object.entries(data);
+                    const fallas = entries.filter(([, v]) => v.estado === "MALO").length;
+                    return (
+                      <div key={title}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold">{title}</h4>
+                          <span className="text-xs text-muted-foreground">
+                            {entries.length - fallas}/{entries.length} OK
+                            {fallas > 0 && <span className="text-destructive ml-1">({fallas} fallas)</span>}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          {entries.map(([key, val]) => (
+                            <div
+                              key={key}
+                              className={`flex items-start gap-2 p-2 rounded-md text-sm ${
+                                val.estado === "MALO"
+                                  ? "bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-800"
+                                  : "bg-muted/30"
+                              }`}
+                            >
+                              {val.estado === "MALO" ? (
+                                <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                              ) : (
+                                <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <span className="font-medium">{ITEM_LABELS[key] || key}</span>
+                                {val.estado === "MALO" && val.observaciones && (
+                                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{val.observaciones}</p>
+                                )}
+                              </div>
+                              <Badge variant={val.estado === "MALO" ? "destructive" : "default"} className="text-xs shrink-0">
+                                {val.estado}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                </TabsContent>
+                <TabsContent value="seguimiento" className="mt-4">
+                  <PreopSeguimiento preopId={viewingItem._id} />
+                </TabsContent>
+              </Tabs>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {qrItem?.codigoPublico && (
           <QRShareModal
             open={!!qrItem}
@@ -1213,6 +1763,7 @@ export default function ConductorPreoperativas() {
                             clearFormItems();
                             clearKilometraje();
                             clearFirmadoCheck();
+                            clearSeccionConductor();
                             setSelectedVehiculo(v);
                           }
                         } catch {

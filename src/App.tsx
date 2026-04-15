@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { BrandingProvider } from "@/hooks/useEmpresaBranding";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Admin/Supervisor pages
 import Index from "./pages/Index";
@@ -17,6 +18,7 @@ import Mapa from "./pages/Mapa";
 import Usuarios from "./pages/Usuarios";
 import Vehiculos from "./pages/Vehiculos";
 import Auditoria from "./pages/Auditoria";
+import Estadisticas from "./pages/Estadisticas";
 import Empresas from "./pages/Empresas";
 import Papelera from "./pages/Papelera";
 import NotFound from "./pages/NotFound";
@@ -37,6 +39,7 @@ import ConductorConfiguracion from "./pages/conductor/ConductorConfiguracion";
 const queryClient = new QueryClient();
 
 const App = () => (
+  <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <BrandingProvider>
@@ -122,6 +125,14 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/estadisticas"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
+                  <Estadisticas />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Admin-only routes */}
             <Route
@@ -186,6 +197,7 @@ const App = () => (
       </BrandingProvider>
     </AuthProvider>
   </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
