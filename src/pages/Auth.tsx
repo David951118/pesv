@@ -22,19 +22,27 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noTerceroBlocked, setNoTerceroBlocked] = useState(false);
 
-  const { user, role, loading: authLoading, signIn } = useAuth();
+  const { user, role, loading: authLoading, signIn, signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!authLoading && user) {
+      // Admin no necesita tercero (gestiona el sistema). Conductor/supervisor si.
+      const needsTercero = role === "conductor" || role === "supervisor";
+      if (needsTercero && !user.terceroId) {
+        setNoTerceroBlocked(true);
+        signOut();
+        return;
+      }
       if (role === "conductor") {
         navigate("/conductor/preoperativas", { replace: true });
       } else if (role === "admin" || role === "supervisor") {
         navigate("/", { replace: true });
       }
     }
-  }, [user, role, authLoading, navigate]);
+  }, [user, role, authLoading, navigate, signOut]);
 
   const handleLogin = async () => {
     setError(null);
@@ -63,6 +71,54 @@ export default function Auth() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (noTerceroBlocked) {
+    return (
+      <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${loginBackground})` }}
+        />
+        <div className="absolute inset-0 bg-black/40" />
+        <div className="relative z-10 w-full px-4 py-8 sm:px-6 lg:px-8 flex items-center justify-center">
+          <Card
+            className="w-full max-w-md rounded-2xl border border-gray-200/50 dark:border-gray-700/50"
+            style={{
+              backgroundColor: "rgba(255, 255, 255, 0.96)",
+              boxShadow: "0 10px 40px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <CardHeader className="text-center pb-4">
+              <div className="mx-auto mb-6 pt-2">
+                <img src={logoAsegurar} alt="Asegurar Limitada" className="h-24 w-auto mx-auto" />
+              </div>
+              <div className="mx-auto mb-3 flex items-center justify-center h-14 w-14 rounded-full bg-amber-100">
+                <AlertCircle className="h-7 w-7 text-amber-600" />
+              </div>
+              <CardTitle className="text-lg font-semibold text-foreground">
+                Acceso no habilitado en PESV
+              </CardTitle>
+              <CardDescription className="mt-2 text-sm">
+                Tu usuario de Cellvi es válido, pero aún no está registrado en la plataforma PESV de Asegurar.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-muted rounded-lg p-4 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground mb-1">¿Qué hacer?</p>
+                <p>Contacta al administrador para que te registre como tercero en el sistema.</p>
+              </div>
+              <Button
+                onClick={() => setNoTerceroBlocked(false)}
+                className="w-full h-11"
+              >
+                Volver al inicio de sesión
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

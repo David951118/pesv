@@ -12,6 +12,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Documentos from "./pages/Documentos";
 import Preoperativas from "./pages/Preoperativas";
+import NuevaPreoperacionalAdmin from "./pages/admin/NuevaPreoperacionalAdmin";
 
 import FUEC from "./pages/FUEC";
 import Mapa from "./pages/Mapa";
@@ -73,6 +74,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["supervisor"]}>
                   <Preoperativas />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/preoperativas/nueva"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
+                  <NuevaPreoperacionalAdmin />
                 </ProtectedRoute>
               }
             />

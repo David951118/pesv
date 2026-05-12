@@ -43,28 +43,28 @@ import { uploadFileToS3 } from "@/lib/uploadToS3";
 import { FileDropZone } from "./FileDropZone";
 import type { ApiRndcDocumento } from "@/services/apirndc/apirndc.types";
 
-// ─── Tipo Documento → Entidades permitidas ───
+// ─── Tipo Documento → Entidades permitidas + si requiere fecha de vencimiento ───
 // V = Vehiculo, T = Tercero, E = Empresa
-const TIPO_DOC_CONFIG: Record<string, { label: string; entidades: string[]; grupal: boolean }> = {
-  SOAT:                 { label: "SOAT",                  entidades: ["Vehiculo"],             grupal: false },
-  TECNOMECANICA:        { label: "Tecnomecanica",         entidades: ["Vehiculo"],             grupal: false },
-  TARJETA_OPERACION:    { label: "Tarjeta de Operacion",  entidades: ["Vehiculo"],             grupal: false },
-  TARJETA_PROPIEDAD:    { label: "Tarjeta de Propiedad",  entidades: ["Vehiculo"],             grupal: false },
-  REVISION_PREVENTIVA:  { label: "Revision Preventiva",   entidades: ["Vehiculo"],             grupal: false },
-  POLIZA_RCE:           { label: "Poliza RCE",            entidades: ["Vehiculo", "Empresa"],  grupal: true },
-  POLIZA_RCC:           { label: "Poliza RCC",            entidades: ["Vehiculo", "Empresa"],  grupal: true },
-  LICENCIA_CONDUCCION:  { label: "Licencia de Conduccion", entidades: ["Tercero"],             grupal: false },
-  CEDULA:               { label: "Cedula",                entidades: ["Tercero"],              grupal: false },
-  ARL:                  { label: "ARL",                   entidades: ["Tercero"],              grupal: false },
-  EPS:                  { label: "EPS",                   entidades: ["Tercero"],              grupal: false },
-  CAJA_COMPENSACION:    { label: "Caja de Compensacion",  entidades: ["Tercero"],              grupal: false },
-  FONDO_PENSIONES:      { label: "Fondo de Pensiones",    entidades: ["Tercero"],              grupal: false },
-  EXAMEN_MEDICO:        { label: "Examen Medico",         entidades: ["Tercero"],              grupal: false },
-  CAPACITACION_PESV:    { label: "Capacitacion PESV",     entidades: ["Tercero"],              grupal: false },
-  CONTRATO_CLIENTE:     { label: "Contrato Cliente",      entidades: ["Empresa"],              grupal: false },
-  CAMARA_COMERCIO:      { label: "Camara de Comercio",    entidades: ["Empresa"],              grupal: false },
-  RUT:                  { label: "RUT",                   entidades: ["Tercero", "Empresa"],   grupal: false },
-  OTRO:                 { label: "Otro",                  entidades: ["Vehiculo", "Tercero", "Empresa"], grupal: false },
+const TIPO_DOC_CONFIG: Record<string, { label: string; entidades: string[]; grupal: boolean; requiresExpiry: boolean }> = {
+  SOAT:                 { label: "SOAT",                  entidades: ["Vehiculo"],             grupal: false, requiresExpiry: true },
+  TECNOMECANICA:        { label: "Tecnomecanica",         entidades: ["Vehiculo"],             grupal: false, requiresExpiry: true },
+  TARJETA_OPERACION:    { label: "Tarjeta de Operacion",  entidades: ["Vehiculo"],             grupal: false, requiresExpiry: true },
+  TARJETA_PROPIEDAD:    { label: "Tarjeta de Propiedad",  entidades: ["Vehiculo"],             grupal: false, requiresExpiry: false },
+  REVISION_PREVENTIVA:  { label: "Revision Preventiva",   entidades: ["Vehiculo"],             grupal: false, requiresExpiry: true },
+  POLIZA_RCE:           { label: "Poliza RCE",            entidades: ["Vehiculo", "Empresa"],  grupal: true,  requiresExpiry: true },
+  POLIZA_RCC:           { label: "Poliza RCC",            entidades: ["Vehiculo", "Empresa"],  grupal: true,  requiresExpiry: true },
+  LICENCIA_CONDUCCION:  { label: "Licencia de Conduccion", entidades: ["Tercero"],             grupal: false, requiresExpiry: true },
+  CEDULA:               { label: "Cedula",                entidades: ["Tercero"],              grupal: false, requiresExpiry: false },
+  ARL:                  { label: "ARL",                   entidades: ["Tercero"],              grupal: false, requiresExpiry: true },
+  EPS:                  { label: "EPS",                   entidades: ["Tercero"],              grupal: false, requiresExpiry: true },
+  CAJA_COMPENSACION:    { label: "Caja de Compensacion",  entidades: ["Tercero"],              grupal: false, requiresExpiry: true },
+  FONDO_PENSIONES:      { label: "Fondo de Pensiones",    entidades: ["Tercero"],              grupal: false, requiresExpiry: true },
+  EXAMEN_MEDICO:        { label: "Examen Medico",         entidades: ["Tercero"],              grupal: false, requiresExpiry: true },
+  CAPACITACION_PESV:    { label: "Capacitacion PESV",     entidades: ["Tercero"],              grupal: false, requiresExpiry: true },
+  CONTRATO_CLIENTE:     { label: "Contrato Cliente",      entidades: ["Empresa"],              grupal: false, requiresExpiry: true },
+  CAMARA_COMERCIO:      { label: "Camara de Comercio",    entidades: ["Empresa"],              grupal: false, requiresExpiry: true },
+  RUT:                  { label: "RUT",                   entidades: ["Tercero", "Empresa"],   grupal: false, requiresExpiry: false },
+  OTRO:                 { label: "Otro",                  entidades: ["Vehiculo", "Tercero", "Empresa"], grupal: false, requiresExpiry: false },
 };
 
 const TIPO_DOC_KEYS = Object.keys(TIPO_DOC_CONFIG);
@@ -125,6 +125,7 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
   const allowedEntidades = tipoConfig?.entidades ?? [];
   const isGrupal = tipoConfig?.grupal ?? false;
   const isMultiSelect = isGrupal && !isEditing;
+  const requiresExpiry = tipoConfig?.requiresExpiry ?? true;
 
   // Fetch entities directly with bearerToken
   const { data: vehiculos = [], isLoading: loadingVehiculos } = useQuery({
@@ -292,7 +293,8 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
       numero: form.numero || undefined,
       entidadEmisora: form.entidadEmisora || undefined,
       fechaExpedicion: form.fechaExpedicion || undefined,
-      fechaVencimiento: form.fechaVencimiento || undefined,
+      // Solo enviamos fechaVencimiento si el tipo de documento la requiere.
+      fechaVencimiento: requiresExpiry ? (form.fechaVencimiento || undefined) : undefined,
       estado: form.estado,
       observaciones: form.observaciones || undefined,
     };
@@ -599,16 +601,18 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
             <Input value={form.entidadEmisora} onChange={(e) => update("entidadEmisora", e.target.value)} placeholder="Ej: Seguros Bolivar" />
           </div>
 
-          {/* Fechas */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Fechas — vencimiento solo si el tipo lo requiere (ej. CEDULA no) */}
+          <div className={requiresExpiry ? "grid grid-cols-2 gap-3" : ""}>
             <div className="space-y-2">
               <Label>Fecha Expedicion</Label>
               <Input type="date" value={form.fechaExpedicion} onChange={(e) => update("fechaExpedicion", e.target.value)} />
             </div>
-            <div className="space-y-2">
-              <Label>Fecha Vencimiento</Label>
-              <Input type="date" value={form.fechaVencimiento} onChange={(e) => update("fechaVencimiento", e.target.value)} />
-            </div>
+            {requiresExpiry && (
+              <div className="space-y-2">
+                <Label>Fecha Vencimiento</Label>
+                <Input type="date" value={form.fechaVencimiento} onChange={(e) => update("fechaVencimiento", e.target.value)} />
+              </div>
+            )}
           </div>
 
           {/* Estado */}

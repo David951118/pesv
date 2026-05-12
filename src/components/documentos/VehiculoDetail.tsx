@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,7 +13,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Car, Loader2, FileText, Download, Eye, ExternalLink, Plus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeft, Car, Loader2, FileText, Download, Eye, Plus, Pencil, Trash2 } from "lucide-react";
 import type { ApiRndcDocumento } from "@/services/apirndc/apirndc.types";
 import { DocumentoFormDialog } from "./DocumentoFormDialog";
 
@@ -114,7 +126,29 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
   const { bearerToken } = useAuth();
   const [selectedDoc, setSelectedDoc] = useState<ApiRndcDocumento | null>(null);
   const [createDocType, setCreateDocType] = useState<string | null>(null);
+  const [editingDoc, setEditingDoc] = useState<ApiRndcDocumento | null>(null);
   const queryClient = useQueryClient();
+
+  // Eliminar documento (papelera)
+  const deleteDocMutation = useMutation({
+    mutationFn: async (docId: string) => {
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/documentos/${docId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${bearerToken}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.message || `Error al eliminar (${res.status})`);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Documento enviado a la papelera");
+      queryClient.invalidateQueries({ queryKey: ["vehiculo-docs", vehiculoId] });
+      queryClient.invalidateQueries({ queryKey: ["apirndc-documentos"] });
+      setSelectedDoc(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // Fetch vehicle
   const { data: vehiculo, isLoading } = useQuery({
@@ -340,24 +374,76 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
         }}
       />
 
+      {/* Edit Document Dialog */}
+      <DocumentoFormDialog
+        open={!!editingDoc}
+        onOpenChange={(v) => !v && setEditingDoc(null)}
+        documento={editingDoc}
+        onSuccess={() => {
+          setEditingDoc(null);
+          queryClient.invalidateQueries({ queryKey: ["vehiculo-docs", vehiculoId] });
+        }}
+      />
+
       {/* Document Detail Dialog */}
       <Dialog open={!!selectedDoc} onOpenChange={(v) => !v && setSelectedDoc(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           {selectedDoc && (
             <>
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-3">
-                  {selectedDoc.tipoDocumento?.replace(/_/g, " ")}
-                  <Badge
-                    variant={
-                      selectedDoc.estado === "VIGENTE" ? "default"
-                        : selectedDoc.estado === "VENCIDO" || selectedDoc.estado === "RECHAZADO" ? "destructive"
-                        : "secondary"
-                    }
-                  >
-                    {getDocStatusLabel(selectedDoc.estado)}
-                  </Badge>
-                </DialogTitle>
+                <div className="flex items-start justify-between gap-3">
+                  <DialogTitle className="flex items-center gap-3 flex-wrap">
+                    {selectedDoc.tipoDocumento?.replace(/_/g, " ")}
+                    <Badge
+                      variant={
+                        selectedDoc.estado === "VIGENTE" ? "default"
+                          : selectedDoc.estado === "VENCIDO" || selectedDoc.estado === "RECHAZADO" ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      {getDocStatusLabel(selectedDoc.estado)}
+                    </Badge>
+                  </DialogTitle>
+                  <div className="flex items-center gap-1 mr-6 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditingDoc(selectedDoc);
+                        setSelectedDoc(null);
+                      }}
+                      className="gap-1.5"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Editar
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive">
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Eliminar
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Eliminar documento</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Esta acción enviará el documento a la papelera. Podrá restaurarlo posteriormente.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => deleteDocMutation.mutate(selectedDoc._id)}
+                            disabled={deleteDocMutation.isPending}
+                          >
+                            {deleteDocMutation.isPending ? "Eliminando..." : "Eliminar"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
               </DialogHeader>
 
               <div className="space-y-3 text-sm">

@@ -496,16 +496,20 @@ export default function Usuarios() {
   };
 
   const openEditDialog = (tercero?: TerceroData) => {
-    const target = tercero || viewingUser;
+    // OJO: si esto se pasa como onClick directo (onClick={openEditDialog}),
+    // React inyecta el SyntheticEvent como primer argumento. Solo aceptamos un
+    // TerceroData real; cualquier otra cosa cae al viewingUser actual.
+    const isTercero = tercero && typeof tercero === "object" && "_id" in tercero;
+    const target = isTercero ? tercero : viewingUser;
     if (!target) return;
-    if (tercero) setViewingUser(tercero);
+    if (isTercero) setViewingUser(tercero);
     setEditForm({
-      identificacion: target.identificacion,
-      tipoId: target.tipoId,
-      nombres: target.nombres,
-      apellidos: target.apellidos,
+      identificacion: target.identificacion ?? "",
+      tipoId: target.tipoId ?? "CC",
+      nombres: target.nombres ?? "",
+      apellidos: target.apellidos ?? "",
       rol: target.roles?.[0] || "CONDUCTOR",
-      usuarioCellvi: target.usuarioCellvi,
+      usuarioCellvi: target.usuarioCellvi ?? "",
       telefono: target.contacto?.telefono || "",
       tipoSangre: target.datosConductor?.tipoSangre || "",
       empresaId: getEmpresaId(target.empresa),
@@ -856,7 +860,7 @@ export default function Usuarios() {
                   Volver al listado
                 </Button>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={openEditDialog} className="gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openEditDialog()} className="gap-2">
                     <Pencil className="h-4 w-4" />
                     Editar
                   </Button>

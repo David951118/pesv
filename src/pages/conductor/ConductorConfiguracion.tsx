@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
@@ -118,24 +118,36 @@ export default function ConductorConfiguracion() {
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<DocPersonal | null>(null);
 
+  // Fallback: conductorId solo se setea cuando role === "conductor"; para supervisor/cliente-admin
+  // usar terceroId del user directamente para que el perfil y los documentos personales funcionen.
+  const terceroIdEffective = conductorId || user?.terceroId || null;
+
+  // Si intentan abrir el diálogo sin tercero identificado, avisar y cerrar.
+  useEffect(() => {
+    if (uploadingFor && !terceroIdEffective) {
+      toast.error("No se encontró tu registro de tercero. Contacta al administrador.");
+      setUploadingFor(null);
+    }
+  }, [uploadingFor, terceroIdEffective]);
+
   const { data: tercero, isLoading } = useQuery({
-    queryKey: ["conductor-perfil", conductorId],
+    queryKey: ["conductor-perfil", terceroIdEffective],
     queryFn: async () => {
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/terceros/${conductorId}`, {
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/terceros/${terceroIdEffective}`, {
         headers: { Authorization: `Bearer ${bearerToken}` },
       });
       if (!res.ok) throw new Error("Error al cargar perfil");
       const json = await res.json();
       return (json.data || json) as TerceroData;
     },
-    enabled: !!bearerToken && !!conductorId,
+    enabled: !!bearerToken && !!terceroIdEffective,
   });
 
   const { data: docsPersonales, isLoading: loadingDocs } = useQuery({
-    queryKey: ["conductor-docs-personales", conductorId],
+    queryKey: ["conductor-docs-personales", terceroIdEffective],
     queryFn: async () => {
       const res = await fetch(
-        `${getApiRndcBaseUrl()}/api/documentos?entidadId=${conductorId}&entidadModelo=Tercero`,
+        `${getApiRndcBaseUrl()}/api/documentos?entidadId=${terceroIdEffective}&entidadModelo=Tercero`,
         { headers: { Authorization: `Bearer ${bearerToken}` } }
       );
       if (!res.ok) return [];
@@ -143,7 +155,7 @@ export default function ConductorConfiguracion() {
       const list = json.data || json;
       return (Array.isArray(list) ? list : []) as DocPersonal[];
     },
-    enabled: !!bearerToken && !!conductorId,
+    enabled: !!bearerToken && !!terceroIdEffective,
   });
 
   // Most recent doc per type
@@ -383,12 +395,12 @@ export default function ConductorConfiguracion() {
       </div>
 
       {/* Upload dialog */}
-      {uploadingFor && conductorId && (
+      {uploadingFor && terceroIdEffective && (
         <UploadPersonalDocDialog
           docTypeKey={uploadingFor}
           docTypeLabel={PERSONAL_DOC_TYPES.find((d) => d.key === uploadingFor)?.label || uploadingFor}
           requiresExpiry={PERSONAL_DOC_TYPES.find((d) => d.key === uploadingFor)?.requiresExpiry ?? false}
-          conductorId={conductorId}
+          conductorId={terceroIdEffective}
           onClose={() => setUploadingFor(null)}
           onSuccess={() => {
             setUploadingFor(null);
@@ -539,17 +551,19 @@ function UploadPersonalDocDialog({ docTypeKey, docTypeLabel, requiresExpiry, con
             <Input value={entidadEmisora} onChange={(e) => setEntidadEmisora(e.target.value)} placeholder="Ej: Ministerio de Transporte" className="mt-1" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className={requiresExpiry ? "grid grid-cols-2 gap-3" : ""}>
             <div>
-              <Label className="text-sm">Fecha expedición {requiresExpiry && "*"}</Label>
+              <Label className="text-sm">Fecha expedición</Label>
               <Input type="date" value={fechaExpedicion} onChange={(e) => setFechaExpedicion(e.target.value)} className="mt-1" />
             </div>
-            <div>
-              <Label className="text-sm">Fecha vencimiento {requiresExpiry && "*"}</Label>
-              <Input type="date" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} min={fechaExpedicion || undefined} className="mt-1" />
-            </div>
+            {requiresExpiry && (
+              <div>
+                <Label className="text-sm">Fecha vencimiento *</Label>
+                <Input type="date" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} min={fechaExpedicion || undefined} className="mt-1" />
+              </div>
+            )}
           </div>
-          {dateError && <p className="text-xs text-destructive">{dateError}</p>}
+          {requiresExpiry && dateError && <p className="text-xs text-destructive">{dateError}</p>}
 
           {/* Front file */}
           <div>

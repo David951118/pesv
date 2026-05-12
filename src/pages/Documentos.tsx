@@ -12,8 +12,21 @@ import { DocumentoFormDialog } from "@/components/documentos/DocumentoFormDialog
 import { DocumentoDetailDialog } from "@/components/documentos/DocumentoDetailDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
-import { Car, FileText, FolderOpen, Loader2, History } from "lucide-react";
+import { Car, FileText, FolderOpen, Loader2, History, Search, X, Eye, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -33,7 +46,10 @@ type Tab = "documentos" | "vehiculos" | "historial";
 export default function Documentos() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { role, bearerToken } = useAuth();
-  const isAdmin = role === "admin";
+  // Tanto admin como cliente-admin (supervisor) pueden borrar documentos:
+  // el backend ya autoriza ambos roles. Mantenemos el nombre isAdmin
+  // para no propagar el cambio en cascada por toda la pagina.
+  const isAdmin = role === "admin" || role === "supervisor";
   const queryClient = useQueryClient();
 
   // Tab state — support legacy ?section=vehiculos URLs
@@ -41,6 +57,7 @@ export default function Documentos() {
   const tabParam = searchParams.get("tab");
   const initialTab: Tab = sectionParam === "vehiculos" || tabParam === "vehiculos" ? "vehiculos" : sectionParam === "historial" || tabParam === "historial" ? "historial" : "documentos";
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  const [historialSearch, setHistorialSearch] = useState("");
 
   // Vehiculo sub-navigation state
   const initialId = searchParams.get("id");
@@ -147,6 +164,7 @@ export default function Documentos() {
       if (!res.ok) throw new Error(`Error: ${res.status}`);
       toast.success("Documento eliminado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["documentos-list"] });
+      queryClient.invalidateQueries({ queryKey: ["documentos-historial"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar");
     }
@@ -155,6 +173,7 @@ export default function Documentos() {
   const handleFormSuccess = () => {
     setSelectedDoc(null);
     queryClient.invalidateQueries({ queryKey: ["documentos-list"] });
+    queryClient.invalidateQueries({ queryKey: ["documentos-historial"] });
   };
 
   const handlePageChange = (newPage: number) => {
@@ -176,7 +195,8 @@ export default function Documentos() {
     enabled: !!bearerToken && activeTab === "historial",
   });
 
-  // Group historial by entidad + tipoDocumento
+  // Group historial by entidad + tipoDocumento, with optional search filter on entidad,
+  // tipoDocumento o numero de cualquier version del grupo.
   const historialGroups = (() => {
     if (!historialData) return [];
     const map = new Map<string, { entidad: string; tipo: string; docs: ApiRndcDocumento[] }>();
@@ -191,11 +211,17 @@ export default function Documentos() {
       }
       map.get(key)!.docs.push(doc);
     }
-    // Sort docs within each group by date desc, only keep groups with 1+ docs
     for (const [, group] of map) {
       group.docs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     }
-    return Array.from(map.values()).filter(g => g.docs.length > 0).sort((a, b) => a.entidad.localeCompare(b.entidad));
+    const all = Array.from(map.values()).filter(g => g.docs.length > 0).sort((a, b) => a.entidad.localeCompare(b.entidad));
+    const q = historialSearch.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((g) => {
+      if (g.entidad.toLowerCase().includes(q)) return true;
+      if (g.tipo.toLowerCase().replace(/_/g, " ").includes(q)) return true;
+      return g.docs.some((d) => (d.numero || "").toLowerCase().includes(q));
+    });
   })();
 
   const tabs = [
@@ -275,6 +301,29 @@ export default function Documentos() {
 
         {activeTab === "historial" && (
           <div className="space-y-4">
+            {/* Filtro de busqueda */}
+            <div className="bg-card border rounded-lg p-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={historialSearch}
+                  onChange={(e) => setHistorialSearch(e.target.value)}
+                  placeholder="Buscar por entidad (placa, nombre, NIT), tipo de documento o numero..."
+                  className="pl-9 pr-9"
+                />
+                {historialSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setHistorialSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-muted"
+                    aria-label="Limpiar busqueda"
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {loadingHistorial ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -282,7 +331,9 @@ export default function Documentos() {
             ) : historialGroups.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <History className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                <p className="font-medium">No hay documentos con historial</p>
+                <p className="font-medium">
+                  {historialSearch ? "Sin resultados para esa busqueda" : "No hay documentos con historial"}
+                </p>
               </div>
             ) : (
               historialGroups.map((group, idx) => (
@@ -302,14 +353,14 @@ export default function Documentos() {
                         <TableHead>Estado</TableHead>
                         <TableHead>Entidad Emisora</TableHead>
                         <TableHead>Creado</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {group.docs.map((doc, i) => (
                         <TableRow
                           key={doc._id}
-                          className={cn("cursor-pointer hover:bg-muted/50", i === 0 && "bg-green-50/50 dark:bg-green-900/10")}
-                          onClick={() => { setSelectedDoc(doc); setShowDetail(true); }}
+                          className={cn("hover:bg-muted/50", i === 0 && "bg-green-50/50 dark:bg-green-900/10")}
                         >
                           <TableCell className="font-medium text-sm">{doc.numero || "—"}</TableCell>
                           <TableCell className="text-sm">{doc.fechaExpedicion ? format(new Date(doc.fechaExpedicion), "dd MMM yyyy", { locale: es }) : "—"}</TableCell>
@@ -321,6 +372,39 @@ export default function Documentos() {
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">{doc.entidadEmisora || "—"}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{doc.createdAt ? format(new Date(doc.createdAt), "dd/MM/yyyy", { locale: es }) : "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="icon" onClick={() => handleView(doc)} title="Ver detalle">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => handleEdit(doc)} title="Editar">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              {isAdmin && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" title="Eliminar">
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Eliminar documento</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Esta accion enviara el documento a la papelera. Podra restaurarlo posteriormente.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => handleDelete(doc._id)}>
+                                        Eliminar
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

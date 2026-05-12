@@ -272,6 +272,37 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
     },
   });
 
+  // Preop base: necesario para saber horasSueno y determinar si una novedad es incorregible.
+  const preopQuery = useQuery({
+    queryKey: ["preop-base", preopId],
+    enabled: !!preopId && !!bearerToken,
+    queryFn: async () => {
+      const res = await fetch(`${base}/api/preoperacionales/${preopId}`, {
+        headers: authHeaders,
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      return (json.data ?? json) as { seccionConductor?: { horasSueno?: number } };
+    },
+  });
+
+  const horasSueno = Number(preopQuery.data?.seccionConductor?.horasSueno ?? NaN);
+  // Regla PESV: se requieren 8 horas de sueno. Menos de eso, no se corrige con foto.
+  const sueñoInsuficiente = Number.isFinite(horasSueno) && horasSueno < 8;
+
+  // Una novedad es "incorregible" si su item/seccion tiene que ver con horas de sueno y el conductor durmio <= 2 horas.
+  const esNovedadSuenoIncorregible = (nov: NovedadFull): boolean => {
+    if (!sueñoInsuficiente) return false;
+    const tag = `${nov.item ?? ""} ${nov.seccion ?? ""}`.toLowerCase();
+    return (
+      tag.includes("sueno") ||
+      tag.includes("sueño") ||
+      tag.includes("horassueno") ||
+      tag.includes("horas_sueno") ||
+      tag.includes("conductor")
+    );
+  };
+
   const anotacionesQuery = useQuery({
     queryKey: ["preop-anotaciones", preopId],
     enabled: !!preopId && !!bearerToken,
@@ -729,8 +760,23 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
                   </div>
                 )}
 
-                {/* Subir foto de corrección - cualquier rol con acceso, novedades pendientes */}
-                {(nov.estado === "CREADA" || nov.estado === "PENDIENTE" || nov.estado === "RECHAZADA") && (
+                {/* Aviso de incorregible cuando durmio <= 2h — esta condicion no se corrige con una foto */}
+                {(nov.estado === "CREADA" || nov.estado === "PENDIENTE" || nov.estado === "RECHAZADA") && esNovedadSuenoIncorregible(nov) && (
+                  <div className="pt-2 border-t">
+                    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 p-3">
+                      <Ban className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="text-xs">
+                        <p className="font-semibold text-amber-800 dark:text-amber-300">Novedad no corregible</p>
+                        <p className="text-amber-700 dark:text-amber-400 mt-0.5">
+                          El conductor reportó {horasSueno} {horasSueno === 1 ? "hora" : "horas"} de sueño (mínimo PESV: 8). Esta condición no puede subsanarse subiendo una corrección; requiere reemplazo del conductor o decisión administrativa.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subir foto de corrección - cualquier rol con acceso, novedades pendientes (y corregibles) */}
+                {(nov.estado === "CREADA" || nov.estado === "PENDIENTE" || nov.estado === "RECHAZADA") && !esNovedadSuenoIncorregible(nov) && (
                   <div className="pt-2 border-t">
                     {correccionNovedadId === nov._id ? (
                       <div className="space-y-2 bg-background border rounded-md p-3">

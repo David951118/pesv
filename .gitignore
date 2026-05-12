@@ -49,3 +49,4 @@ src/integrations/supabase/
 
 # User manual (generated)
 MANUAL-USO.md
+/.claude

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { getVehicleMarkerSVG } from "./VehicleMarkerAion";
+import { getVehicleMarkerSVG } from "./VehicleMarker";
 import { Button } from "@/components/ui/button";
 import { Map, Satellite, Mountain, Moon, ZoomIn, ZoomOut, Locate } from "lucide-react";
 
@@ -205,7 +205,7 @@ export function FleetMap({
       } else {
         // Create new marker
         const el = document.createElement("div");
-        el.className = "fleet-marker fleet-marker-aion";
+        el.className = "fleet-marker";
         el.style.width = "52px";
         el.style.height = "65px";
         el.style.cursor = "pointer";

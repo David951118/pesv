@@ -1,4 +1,5 @@
-import { useParams } from "react-router-dom";
+import { useEffect } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
 import { Loader2, CheckCircle, XCircle, MinusCircle, Download, ShieldCheck, AlertTriangle, Car, User, Building2 } from "lucide-react";
@@ -6,33 +7,71 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-// ── Ordered section keys ──
+// ── Ordered section keys (alineadas con backend) ──
 const SECCION_DELANTERA = [
-  "luces","direccionalesDelanteros","limpiabrisas","parabrisas","espejosRetrovisores",
-  "liquidos","llantaDelanteraDerecha","llantaDelanteraIzquierda","bocina","frenos",
+  "luces","direccionalesDelanteros","limpiabrisas","parabrisas",
+  "llantaDelanteraDerecha","llantaDelanteraIzquierda","bocina","frenos",
+  "nivelAceiteMotor","nivelLiquidoFrenos","nivelAguaRadiador","estadoBateria","fugasLiquidos",
 ];
 const SECCION_MEDIA = [
-  "tablero","timon","cinturones","pedales",
-  "frenoMano","bateria","kitPrimerosAuxilios","reflectivos",
+  "tablero","timon","pedales","frenoMano","kitPrimerosAuxilios","reflectivos",
+  "aireAcondicionado","silleteria","nivelCombustible","pito",
+  "cinturonesSeguridad","airbags","vidrios","apoyacabezas",
+  "espejoIzquierdo","espejoDerecho","espejoRetrovisor",
+  "estadoDireccion","suspensionDelantera","suspensionTrasera",
+  "calcomanias","puertas",
 ];
 const SECCION_TRASERA = [
   "stop","llantasRepuesto","equipoCarretera","llantaTraseraDerecha",
   "llantaTraseraIzquierda","direccionalesTraseros","placa","extintor","herramienta",
 ];
+const SECCION_ASEO = [
+  "aseoInterno","aseoExterno","latas","pintura",
+];
 
 const ITEM_LABELS: Record<string, string> = {
+  // Delantera
   luces: "Luces", direccionalesDelanteros: "Direccionales Delanteros",
   limpiabrisas: "Limpiabrisas", parabrisas: "Parabrisas",
-  espejosRetrovisores: "Espejos Retrovisores",
-  liquidos: "Líquidos", llantaDelanteraDerecha: "Llanta Delantera Derecha",
-  llantaDelanteraIzquierda: "Llanta Delantera Izquierda", bocina: "Bocina", frenos: "Frenos",
-  tablero: "Tablero", timon: "Timón", cinturones: "Cinturones", pedales: "Pedales",
-  frenoMano: "Freno de Mano", bateria: "Batería", kitPrimerosAuxilios: "Kit Primeros Auxilios",
-  reflectivos: "Reflectivos", stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
-  equipoCarretera: "Equipo de Carretera", llantaTraseraDerecha: "Llanta Trasera Derecha",
+  llantaDelanteraDerecha: "Llanta Delantera Derecha",
+  llantaDelanteraIzquierda: "Llanta Delantera Izquierda",
+  bocina: "Bocina", frenos: "Frenos",
+  nivelAceiteMotor: "Nivel de Aceite del Motor",
+  nivelLiquidoFrenos: "Nivel de Líquido de Frenos",
+  nivelAguaRadiador: "Nivel de Agua del Radiador",
+  estadoBateria: "Estado de la Batería",
+  fugasLiquidos: "Fugas de Líquidos",
+  // Media
+  tablero: "Tablero", timon: "Timón", pedales: "Pedales",
+  frenoMano: "Freno de Mano",
+  kitPrimerosAuxilios: "Kit Primeros Auxilios",
+  reflectivos: "Reflectivos",
+  aireAcondicionado: "Aire Acondicionado",
+  silleteria: "Sillería",
+  nivelCombustible: "Nivel de Combustible",
+  pito: "Pito",
+  cinturonesSeguridad: "Cinturones de Seguridad",
+  airbags: "Airbags",
+  vidrios: "Vidrios",
+  apoyacabezas: "Apoyacabezas",
+  espejoIzquierdo: "Espejo Izquierdo",
+  espejoDerecho: "Espejo Derecho",
+  espejoRetrovisor: "Espejo Retrovisor",
+  estadoDireccion: "Estado de la Dirección",
+  suspensionDelantera: "Suspensión Delantera",
+  suspensionTrasera: "Suspensión Trasera",
+  calcomanias: "Calcomanías",
+  puertas: "Puertas",
+  // Trasera
+  stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
+  equipoCarretera: "Equipo de Carretera",
+  llantaTraseraDerecha: "Llanta Trasera Derecha",
   llantaTraseraIzquierda: "Llanta Trasera Izquierda",
-  direccionalesTraseros: "Direccionales Traseros", placa: "Placa",
-  extintor: "Extintor", herramienta: "Herramienta",
+  direccionalesTraseros: "Direccionales Traseros",
+  placa: "Placa", extintor: "Extintor", herramienta: "Herramienta",
+  // Aseo
+  aseoInterno: "Aseo Interno", aseoExterno: "Aseo Externo",
+  latas: "Latas", pintura: "Pintura",
 };
 
 // ── Types ──
@@ -63,6 +102,7 @@ interface PreopVerificado {
   seccionDelantera?: SectionMap;
   seccionMedia?: SectionMap;
   seccionTrasera?: SectionMap;
+  seccionAseo?: SectionMap;
   contadorQR?: number;
 }
 
@@ -80,11 +120,12 @@ function formatDateFull(d?: string) {
 }
 
 function countSection(s?: SectionMap) {
-  if (!s) return { ok: 0, fallas: 0, regular: 0 };
+  if (!s) return { ok: 0, fallas: 0, regular: 0, na: 0 };
   const vals = Object.values(s);
   const fallas = vals.filter(v => v.estado === "MALO").length;
   const regular = vals.filter(v => v.estado === "REGULAR").length;
-  return { ok: vals.length - fallas - regular, fallas, regular };
+  const na = vals.filter(v => v.estado === "NO_APLICA").length;
+  return { ok: vals.length - fallas - regular - na, fallas, regular, na };
 }
 
 // ── Item badge ──
@@ -99,6 +140,11 @@ function ItemBadge({ estado }: { estado: string }) {
       <AlertTriangle className="h-3 w-3" /> REGULAR
     </span>
   );
+  if (estado === "NO_APLICA") return (
+    <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+      <MinusCircle className="h-3 w-3" /> N/A
+    </span>
+  );
   return (
     <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 shrink-0">
       <CheckCircle className="h-3 w-3" /> BUENO
@@ -109,7 +155,7 @@ function ItemBadge({ estado }: { estado: string }) {
 // ── Section component ──
 function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[]; data?: SectionMap }) {
   if (!data) return null;
-  const { ok, fallas, regular } = countSection(data);
+  const { ok, fallas, regular, na } = countSection(data);
   const fotoItems = keys.filter(k => data[k]?.estado === "MALO" && data[k]?.fotoUrl);
 
   return (
@@ -117,10 +163,11 @@ function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[
       {/* Section header */}
       <div className="flex items-center justify-between bg-gray-50 px-5 py-2.5 border-b border-gray-200">
         <span className="font-bold text-xs uppercase tracking-wider text-gray-500">{title}</span>
-        <div className="flex items-center gap-3 text-xs font-semibold">
+        <div className="flex items-center gap-3 text-xs font-semibold flex-wrap justify-end">
           <span className="text-green-700">{ok} OK</span>
           {fallas > 0 && <span className="text-red-600">{fallas} falla{fallas > 1 ? "s" : ""}</span>}
           {regular > 0 && <span className="text-amber-500">{regular} REGULAR</span>}
+          {na > 0 && <span className="text-slate-500">{na} N/A</span>}
         </div>
       </div>
 
@@ -171,6 +218,8 @@ function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[
 // ── Main component ──
 export default function VerificarPreoperacional() {
   const { codigo } = useParams<{ codigo: string }>();
+  const [searchParams] = useSearchParams();
+  const autoPrint = searchParams.get("print") === "1";
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["verificar-preop", codigo],
@@ -184,10 +233,50 @@ export default function VerificarPreoperacional() {
     retry: false,
   });
 
+  // Auto-print cuando viene ?print=1. Esperamos a que todas las imagenes
+  // (selfie, fotos de fallas) terminen de cargar antes de abrir el dialogo.
+  useEffect(() => {
+    if (!autoPrint || !data) return;
+    let cancelled = false;
+    const triggerPrint = () => {
+      if (cancelled) return;
+      const imgs = Array.from(document.images) as HTMLImageElement[];
+      Promise.all(
+        imgs.map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                img.addEventListener("load", () => resolve(), { once: true });
+                img.addEventListener("error", () => resolve(), { once: true });
+              }),
+        ),
+      ).then(() => {
+        if (!cancelled) window.print();
+      });
+    };
+    const t = setTimeout(triggerPrint, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [autoPrint, data]);
+
   const totals = data ? {
-    ok: countSection(data.seccionDelantera).ok + countSection(data.seccionMedia).ok + countSection(data.seccionTrasera).ok,
-    fallas: countSection(data.seccionDelantera).fallas + countSection(data.seccionMedia).fallas + countSection(data.seccionTrasera).fallas,
-    total: (Object.keys(data.seccionDelantera ?? {}).length) + (Object.keys(data.seccionMedia ?? {}).length) + (Object.keys(data.seccionTrasera ?? {}).length),
+    ok:
+      countSection(data.seccionDelantera).ok +
+      countSection(data.seccionMedia).ok +
+      countSection(data.seccionTrasera).ok +
+      countSection(data.seccionAseo).ok,
+    fallas:
+      countSection(data.seccionDelantera).fallas +
+      countSection(data.seccionMedia).fallas +
+      countSection(data.seccionTrasera).fallas +
+      countSection(data.seccionAseo).fallas,
+    total:
+      Object.keys(data.seccionDelantera ?? {}).length +
+      Object.keys(data.seccionMedia ?? {}).length +
+      Object.keys(data.seccionTrasera ?? {}).length +
+      Object.keys(data.seccionAseo ?? {}).length,
   } : { ok: 0, fallas: 0, total: 0 };
 
   const aprobado = data?.estadoGeneral === "APROBADO";
@@ -471,6 +560,7 @@ export default function VerificarPreoperacional() {
                   <InspeccionSeccion title="Sección Delantera" keys={SECCION_DELANTERA} data={data.seccionDelantera} />
                   <InspeccionSeccion title="Sección Media" keys={SECCION_MEDIA} data={data.seccionMedia} />
                   <InspeccionSeccion title="Sección Trasera" keys={SECCION_TRASERA} data={data.seccionTrasera} />
+                  <InspeccionSeccion title="Sección Aseo" keys={SECCION_ASEO} data={data.seccionAseo} />
                 </div>
               </div>
 

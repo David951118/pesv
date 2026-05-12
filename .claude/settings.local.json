@@ -12,7 +12,16 @@
       "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/icon-192.png)",
       "Bash(cp \"src/assets/logos/triangulo1 png.png\" public/icon-512.png)",
       "Bash(npx vitest:*)",
-      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")",
+      "Bash(cd \"/c/Users/dsmon/OneDrive/Documentos/Documents/Cellviweb/asegurarcoop-platform-main/asegurarcoop-platform-main\" && ls src/assets/logos/ | grep -i aion)",
+      "Read(//c/c/Users/dsmon/OneDrive/Documentos/Documents/Cellviweb/asegurarcoop-platform-main/asegurarcoop-platform-main/src/assets/**)",
+      "Bash(cd \"/c/Users/dsmon/OneDrive/Documentos/Documents/Cellviweb/asegurarcoop-platform-main/asegurarcoop-platform-main\" && rm -f src/assets/logos/aion-logo-icon.png src/assets/logos/aion-logo.png && echo \"Borrados\")",
+      "Bash(cd \"/c/Users/dsmon/OneDrive/Documentos/Documents/Cellviweb/asegurarcoop-platform-main/asegurarcoop-platform-main\" && ls src/components/mapa/)",
+      "Read(//c/c/Users/dsmon/OneDrive/Documentos/Documents/Cellviweb/asegurarcoop-platform-main/asegurarcoop-platform-main/src/components/**)",
+      "Bash(npm install *)"
+    ],
+    "additionalDirectories": [
+      "c:\\c\\Users\\dsmon\\OneDrive\\Documentos\\Documents\\Cellviweb\\asegurarcoop-platform-main\\asegurarcoop-platform-main\\src\\assets\\logos"
     ]
   }
 }

@@ -53,55 +53,31 @@ import { PreopSeguimiento } from "@/components/preoperativas/PreopSeguimiento";
 
 // ── Section definitions ──
 
-const SECCION_DELANTERA_ITEMS = [
-  { key: "luces", label: "Luces" },
-  { key: "direccionalesDelanteros", label: "Direccionales Delanteros" },
-  { key: "limpiabrisas", label: "Limpiabrisas" },
-  { key: "parabrisas", label: "Parabrisas" },
-  { key: "espejosRetrovisores", label: "Espejos Retrovisores" },
-  { key: "liquidos", label: "Líquidos" },
-  { key: "llantaDelanteraDerecha", label: "Llanta Delantera Derecha" },
-  { key: "llantaDelanteraIzquierda", label: "Llanta Delantera Izquierda" },
-  { key: "bocina", label: "Bocina" },
-  { key: "frenos", label: "Frenos" },
-] as const;
-
-const SECCION_MEDIA_ITEMS = [
-  { key: "tablero", label: "Tablero" },
-  { key: "timon", label: "Timón" },
-  { key: "cinturones", label: "Cinturones" },
-  { key: "pedales", label: "Pedales" },
-  { key: "frenoMano", label: "Freno de Mano" },
-  { key: "bateria", label: "Batería" },
-  { key: "kitPrimerosAuxilios", label: "Kit Primeros Auxilios" },
-  { key: "reflectivos", label: "Reflectivos" },
-] as const;
-
-const SECCION_TRASERA_ITEMS = [
-  { key: "stop", label: "Stop" },
-  { key: "llantasRepuesto", label: "Llantas de Repuesto" },
-  { key: "equipoCarretera", label: "Equipo de Carretera" },
-  { key: "llantaTraseraDerecha", label: "Llanta Trasera Derecha" },
-  { key: "llantaTraseraIzquierda", label: "Llanta Trasera Izquierda" },
-  { key: "direccionalesTraseros", label: "Direccionales Traseros" },
-  { key: "placa", label: "Placa" },
-  { key: "extintor", label: "Extintor" },
-  { key: "herramienta", label: "Herramienta" },
-] as const;
+import {
+  SECCION_DELANTERA_ITEMS,
+  SECCION_MEDIA_ITEMS,
+  SECCION_TRASERA_ITEMS,
+  SECCION_ASEO_ITEMS,
+  KIT_PRIMEROS_AUXILIOS_ITEMS,
+  KIT_CARRETERA_ITEMS,
+} from "@/lib/preopItems";
+import { KitInfoDialog, type EstadoKit } from "@/components/preoperativas/KitInfoDialog";
 
 const ALL_ITEMS = [
   ...SECCION_DELANTERA_ITEMS,
   ...SECCION_MEDIA_ITEMS,
   ...SECCION_TRASERA_ITEMS,
+  ...SECCION_ASEO_ITEMS,
 ];
 
-const TOTAL_ITEMS = ALL_ITEMS.length; // 24
+const TOTAL_ITEMS = ALL_ITEMS.length;
 
 // ── Item label lookup (for novedades) ──
 const ITEM_LABELS: Record<string, string> = {};
 for (const item of SECCION_DELANTERA_ITEMS) ITEM_LABELS[`seccionDelantera.${item.key}`] = item.label;
 for (const item of SECCION_MEDIA_ITEMS) ITEM_LABELS[`seccionMedia.${item.key}`] = item.label;
 for (const item of SECCION_TRASERA_ITEMS) ITEM_LABELS[`seccionTrasera.${item.key}`] = item.label;
+for (const item of SECCION_ASEO_ITEMS) ITEM_LABELS[`seccionAseo.${item.key}`] = item.label;
 // Also map bare keys
 for (const item of ALL_ITEMS) ITEM_LABELS[item.key] = item.label;
 
@@ -146,9 +122,10 @@ interface PreopHistorialItem {
   seccionDelantera?: Record<string, { estado: string; observaciones?: string }>;
   seccionMedia?: Record<string, { estado: string; observaciones?: string }>;
   seccionTrasera?: Record<string, { estado: string; observaciones?: string }>;
+  seccionAseo?: Record<string, { estado: string; observaciones?: string }>;
 }
 
-type ItemEstado = "BUENO" | "REGULAR" | "MALO" | null;
+type ItemEstado = "BUENO" | "REGULAR" | "MALO" | "NO_APLICA" | null;
 
 interface ItemState {
   estado: ItemEstado;
@@ -500,6 +477,7 @@ export default function ConductorPreoperativas() {
         seccionDelantera: buildSection(SECCION_DELANTERA_ITEMS),
         seccionMedia: buildSection(SECCION_MEDIA_ITEMS),
         seccionTrasera: buildSection(SECCION_TRASERA_ITEMS),
+        seccionAseo: buildSection(SECCION_ASEO_ITEMS),
       };
 
       const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales`, {
@@ -580,10 +558,31 @@ export default function ConductorPreoperativas() {
       [key]: {
         ...prev[key],
         estado,
-        // If switching to OK, clear falla data
-        ...(estado === "BUENO" ? { observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false } : {}),
+        // Si pasa a BUENO o NO_APLICA, limpiar datos de falla
+        ...(estado === "BUENO" || estado === "NO_APLICA"
+          ? { observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false }
+          : {}),
       },
     }));
+  };
+
+  // Estado del popup de kits (kitPrimerosAuxilios | equipoCarretera)
+  const [kitDialog, setKitDialog] = useState<{
+    open: boolean;
+    itemKey: string;
+    estado: EstadoKit;
+    kit: "primerosAuxilios" | "carretera";
+  } | null>(null);
+
+  const handleKitEstadoClick = (itemKey: string, estado: EstadoKit) => {
+    const kit = itemKey === "kitPrimerosAuxilios" ? "primerosAuxilios" : "carretera";
+    setKitDialog({ open: true, itemKey, estado, kit });
+  };
+
+  const handleKitConfirm = () => {
+    if (!kitDialog) return;
+    setItemEstado(kitDialog.itemKey, kitDialog.estado);
+    setKitDialog(null);
   };
 
   const setItemObservaciones = (key: string, observaciones: string) => {
@@ -643,15 +642,27 @@ export default function ConductorPreoperativas() {
   // ── Render: Item row ──
   const renderItem = (item: { key: string; label: string }) => {
     const s = formItems[item.key] || { estado: null, observaciones: "", fotoCapturada: false };
+    const isKit = item.key === "kitPrimerosAuxilios" || item.key === "equipoCarretera";
+
+    // Para kits, BUENO/REGULAR/MALO disparan el popup informativo.
+    // NO_APLICA se aplica directo (no hay nada que confirmar si el item no aplica al vehiculo).
+    const handleEstado = (estado: EstadoKit) => {
+      if (isKit && estado !== "NO_APLICA") {
+        handleKitEstadoClick(item.key, estado);
+      } else {
+        setItemEstado(item.key, estado);
+      }
+    };
+
     return (
       <div key={item.key} className="border rounded-lg p-3 space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
           <span className="text-sm font-medium">{item.label}</span>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
-              onClick={() => setItemEstado(item.key, "BUENO")}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              onClick={() => handleEstado("BUENO")}
+              className={`px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                 s.estado === "BUENO"
                   ? "bg-green-600 text-white"
                   : "bg-muted text-muted-foreground hover:bg-green-100"
@@ -662,8 +673,8 @@ export default function ConductorPreoperativas() {
             </button>
             <button
               type="button"
-              onClick={() => setItemEstado(item.key, "REGULAR")}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              onClick={() => handleEstado("REGULAR")}
+              className={`px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                 s.estado === "REGULAR"
                   ? "bg-amber-500 text-white"
                   : "bg-muted text-muted-foreground hover:bg-amber-100"
@@ -674,8 +685,8 @@ export default function ConductorPreoperativas() {
             </button>
             <button
               type="button"
-              onClick={() => setItemEstado(item.key, "MALO")}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              onClick={() => handleEstado("MALO")}
+              className={`px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
                 s.estado === "MALO"
                   ? "bg-red-600 text-white"
                   : "bg-muted text-muted-foreground hover:bg-red-100"
@@ -683,6 +694,17 @@ export default function ConductorPreoperativas() {
             >
               <XCircle className="h-3.5 w-3.5 inline mr-1" />
               MALO
+            </button>
+            <button
+              type="button"
+              onClick={() => handleEstado("NO_APLICA")}
+              className={`px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                s.estado === "NO_APLICA"
+                  ? "bg-slate-600 text-white"
+                  : "bg-muted text-muted-foreground hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}
+            >
+              N/A
             </button>
           </div>
         </div>
@@ -845,7 +867,7 @@ export default function ConductorPreoperativas() {
           </div>
 
           {/* Accordion sections */}
-          <Accordion type="multiple" defaultValue={["conductor", "delantera", "media", "trasera"]} className="space-y-2">
+          <Accordion type="multiple" defaultValue={["conductor", "aseo", "delantera", "media", "trasera"]} className="space-y-2">
             {/* Seccion Conductor */}
             <AccordionItem value="conductor" className="bg-card border rounded-lg px-3">
               <AccordionTrigger className="hover:no-underline">
@@ -1063,6 +1085,18 @@ export default function ConductorPreoperativas() {
               </AccordionContent>
             </AccordionItem>
 
+            <AccordionItem value="aseo" className="bg-card border rounded-lg px-3">
+              <AccordionTrigger className="hover:no-underline">
+                <span className="text-sm font-semibold">Sección Aseo</span>
+                {sectionBadge(SECCION_ASEO_ITEMS)}
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-2">
+                  {SECCION_ASEO_ITEMS.map(renderItem)}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
             <AccordionItem value="delantera" className="bg-card border rounded-lg px-3">
               <AccordionTrigger className="hover:no-underline">
                 <span className="text-sm font-semibold">Sección Delantera</span>
@@ -1174,6 +1208,15 @@ export default function ConductorPreoperativas() {
             </p>
           )}
         </div>
+
+        <KitInfoDialog
+          open={!!kitDialog}
+          onOpenChange={(v) => !v && setKitDialog(null)}
+          estado={kitDialog?.estado ?? "BUENO"}
+          kit={kitDialog?.kit ?? "primerosAuxilios"}
+          items={(kitDialog?.kit ?? "primerosAuxilios") === "primerosAuxilios" ? KIT_PRIMEROS_AUXILIOS_ITEMS : KIT_CARRETERA_ITEMS}
+          onConfirm={handleKitConfirm}
+        />
       </ConductorLayout>
     );
   }
@@ -1353,35 +1396,17 @@ export default function ConductorPreoperativas() {
     );
   }
 
-  // ── Print individual historial PDF via iframe+print (QR public view) ──
+  // ── Print individual historial PDF (QR public view con auto-print) ──
   const handlePrintHistorial = (item: PreopHistorialItem) => {
     if (!item.codigoPublico) {
       toast.error("No se puede descargar sin código público");
       return;
     }
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    iframe.src = `/verificar/preoperacional/${item.codigoPublico}`;
-    iframe.onload = () => {
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } catch (err) {
-          console.error("Print error:", err);
-          toast.error("Error al imprimir");
-        }
-        setTimeout(() => {
-          if (iframe.parentNode) document.body.removeChild(iframe);
-        }, 1500);
-      }, 1500);
-    };
-    document.body.appendChild(iframe);
+    const win = window.open(`/verificar/preoperacional/${item.codigoPublico}?print=1`, "_blank");
+    if (!win) {
+      toast.error("Permita las ventanas emergentes para descargar el PDF");
+      return;
+    }
     toast.success("Preparando PDF...");
   };
 
@@ -1854,6 +1879,7 @@ export default function ConductorPreoperativas() {
           </ul>
         </div>
       </div>
+
     </ConductorLayout>
   );
 }

@@ -7,7 +7,7 @@ interface VehicleOperationalStatus {
   documentosFaltantes?: number;
 }
 
-interface VehicleMarkerAionProps {
+interface VehicleMarkerProps {
   speed: number;
   course: number;
   ignition: boolean | null;
@@ -165,7 +165,7 @@ export function getVehicleMarkerSVG({
   operationalStatus,
   isSelected,
   placa,
-}: VehicleMarkerAionProps): string {
+}: VehicleMarkerProps): string {
   const isMoving = speed > 2;
   const statusConfig = getStatusConfig(speed, ignition, status);
   const opColors = getOperationalColors(operationalStatus);
@@ -271,13 +271,13 @@ export function getVehicleMarkerSVG({
   `;
 }
 
-export function VehicleMarkerAion(props: VehicleMarkerAionProps) {
+export function VehicleMarker(props: VehicleMarkerProps) {
   const svgContent = getVehicleMarkerSVG(props);
-  
+
   return (
     <div
       dangerouslySetInnerHTML={{ __html: svgContent }}
-      className="vehicle-marker-aion"
+      className="vehicle-marker"
     />
   );
 }

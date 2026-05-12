@@ -2,8 +2,6 @@ import logoAsegurar from "./logos/Asegurar con fecha de creación Png.png";
 import logoCoopsetrans from "./logos/logo-coopsetrans.png";
 import logoExpresuratur from "./logos/logo-expresuratur.png";
 import logoRedondo from "./logos/logo-redondo.png";
-import logoAion from "./logos/aion-logo.png";
-import logoAionIcon from "./logos/aion-logo-icon.png";
 import logoSandona from "./logos/sandona.jpg";
 
 export interface LogoOption {
@@ -21,8 +19,6 @@ export const LOGO_OPTIONS: LogoOption[] = [
   { key: "coopsetrans", label: "Coopsetrans", src: logoCoopsetrans },
   { key: "expresuratur", label: "Expresuratur", src: logoExpresuratur },
   { key: "redondo", label: "Logo Redondo", src: logoRedondo },
-  { key: "aion", label: "AION", src: logoAion },
-  { key: "aion-icon", label: "AION Icono", src: logoAionIcon },
   { key: "sandona", label: "Sandoná", src: logoSandona },
 ];
 

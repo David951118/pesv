@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
@@ -155,6 +156,7 @@ function countFallas(section?: Record<string, { estado: string }>): number {
 export default function Preoperativas() {
   const { bearerToken } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>("lista");
   const [searchTerm, setSearchTerm] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
@@ -509,6 +511,14 @@ export default function Preoperativas() {
                 >
                   <Plus className="h-4 w-4 text-blue-600" />
                   Preop Extra
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => navigate("/preoperativas/nueva")}
+                  className="gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  Nueva Preoperacional
                 </Button>
               </div>
             </div>
@@ -1076,29 +1086,13 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
                   toast.error("No se puede descargar sin código público");
                   return;
                 }
-                const iframe = document.createElement("iframe");
-                iframe.style.position = "fixed";
-                iframe.style.right = "0";
-                iframe.style.bottom = "0";
-                iframe.style.width = "0";
-                iframe.style.height = "0";
-                iframe.style.border = "0";
-                iframe.src = `/verificar/preoperacional/${codigo}`;
-                iframe.onload = () => {
-                  setTimeout(() => {
-                    try {
-                      iframe.contentWindow?.focus();
-                      iframe.contentWindow?.print();
-                    } catch (err) {
-                      console.error("Print error:", err);
-                      toast.error("Error al imprimir");
-                    }
-                    setTimeout(() => {
-                      if (iframe.parentNode) document.body.removeChild(iframe);
-                    }, 1500);
-                  }, 1500);
-                };
-                document.body.appendChild(iframe);
+                // Abrimos la vista publica en una pestana nueva con ?print=1.
+                // La vista hace window.print() cuando terminan de cargar las imagenes.
+                const win = window.open(`/verificar/preoperacional/${codigo}?print=1`, "_blank");
+                if (!win) {
+                  toast.error("Permita las ventanas emergentes para descargar el PDF");
+                  return;
+                }
                 toast.success("Preparando PDF...");
               }}
               className="gap-1.5 mr-6"
