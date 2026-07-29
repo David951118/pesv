@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Search, ArrowLeft, Car, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CellviPlacaCombobox } from "@/components/documentos/CellviPlacaCombobox";
 import {
   Table,
   TableBody,
@@ -116,64 +117,96 @@ function getEstadoBadgeVariant(estado: string) {
 
 export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) {
   const queryClient = useQueryClient();
-  const { user, empresaId, bearerToken, cellviToken } = useAuth();
+  const { user, empresaId, bearerToken, cellviToken, role } = useAuth();
+  const isAdmin = role === "admin";
   const [searchTerm, setSearchTerm] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [showForm, setShowForm, clearShowForm] = useSessionState("veh-doc-create", false);
   const [vehiculoForm, setVehiculoForm, clearVehiculoForm] = useSessionState("veh-doc-form", initialForm);
   const [loadingCellvi, setLoadingCellvi] = useState(false);
+  // Opciones de placa (id + placa) para el selector de Cellvi
+  const [cellviPlateOptions, setCellviPlateOptions] = useState<{ id: string; placa: string }[]>([]);
+  // Caché de los detalles de cada vehículo Cellvi (respuesta de /show), llenada on-demand
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [cellviVehiclesData, setCellviVehiclesData] = useState<Record<string, any>>({});
 
   const cellviVehiculos = user?.vehiculos || [];
 
-  // Fetch all Cellvi vehicles when dialog opens
+  // Cargar las placas del selector al abrir el diálogo:
+  // - Admin: TODOS los vehículos de Cellvi (/cellvi/vehiculo/flat/list)
+  // - Otros roles: solo los vehículos asignados al usuario (user.vehiculos)
   useEffect(() => {
-    if (!showForm || !cellviToken || cellviVehiculos.length === 0) return;
-    if (Object.keys(cellviVehiclesData).length > 0) return;
+    if (!showForm) return;
+    let cancelled = false;
 
-    setLoadingCellvi(true);
-    const fetchAll = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const results: Record<string, any> = {};
-      await Promise.all(
-        cellviVehiculos.map(async (v) => {
-          try {
-            const res = await fetch(`/cellviapi/cellvi/vehiculo/${v.id}/show`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${cellviToken}`,
-                "Content-Type": "application/json",
-              },
-            });
-            if (res.ok) {
-              results[v.id.toString()] = await res.json();
-            }
-          } catch {
-            // skip failed
+    const load = async () => {
+      if (isAdmin) {
+        if (!cellviToken) return;
+        setLoadingCellvi(true);
+        try {
+          const res = await fetch(`/cellviapi/cellvi/vehiculo/flat/list`, {
+            headers: { Authorization: `Bearer ${cellviToken}` },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const raw: any[] = Array.isArray(json) ? json : json?.data ?? [];
+            const list = raw
+              .map((v) => ({ id: String(v.id), placa: v.placa }))
+              .filter((v) => v.id && v.placa);
+            if (!cancelled) setCellviPlateOptions(list);
           }
-        })
-      );
-      setCellviVehiclesData(results);
-      setLoadingCellvi(false);
+        } catch {
+          // ignore
+        } finally {
+          if (!cancelled) setLoadingCellvi(false);
+        }
+      } else {
+        setCellviPlateOptions(
+          cellviVehiculos.map((v) => ({ id: String(v.id), placa: v.placa })),
+        );
+      }
     };
-    fetchAll();
-  }, [showForm, cellviToken]);
 
-  const cellviPlateOptions = Object.entries(cellviVehiclesData).map(([id, data]) => ({
-    id,
-    placa: data.placa || `ID: ${id}`,
-  }));
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm, cellviToken, isAdmin]);
 
-  const handleSelectCellviPlaca = (cellviId: string) => {
-    const data = cellviVehiclesData[cellviId];
+  const handleSelectCellviPlaca = async (cellviId: string) => {
+    const opt = cellviPlateOptions.find((o) => o.id === cellviId);
+    // Refleja la selección de inmediato (la placa al menos)
+    setVehiculoForm((f) => ({ ...f, cellviId, placa: opt?.placa || f.placa }));
+
+    // Detalles on-demand (cacheados) para auto-completar el resto del formulario
+    let data = cellviVehiclesData[cellviId];
+    if (!data && cellviToken) {
+      try {
+        const res = await fetch(`/cellviapi/cellvi/vehiculo/${cellviId}/show`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${cellviToken}`,
+            "Content-Type": "application/json",
+          },
+        });
+        if (res.ok) {
+          data = await res.json();
+          setCellviVehiclesData((prev) => ({ ...prev, [cellviId]: data }));
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (!data) return;
+
     const fechaRaw = data.fechaMatricula || "";
     const fechaMatricula = fechaRaw ? fechaRaw.substring(0, 10) : "";
-    setVehiculoForm({
-      ...vehiculoForm,
+    setVehiculoForm((f) => ({
+      ...f,
       cellviId,
-      placa: data.placa || "",
+      placa: data.placa || f.placa,
       marca: data.linea?.marca?.marca || "",
       linea: data.linea?.linea || "",
       modelo: data.modelo?.toString() || "",
@@ -181,7 +214,7 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
       motor: data.serialMotor || "",
       chasis: data.serialChasis || "",
       fechaMatricula,
-    });
+    }));
   };
 
   // Fetch vehiculos from API
@@ -189,7 +222,9 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
     queryKey: ["vehiculos-list"],
     queryFn: async () => {
       if (!bearerToken) throw new Error("No autenticado");
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos`, {
+      // limit alto: la lista pagina/busca en cliente, así que traemos todos los vehículos
+      // (el backend devuelve 50 por defecto y dejaría fuera los recién creados).
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos?limit=1000`, {
         headers: { Authorization: `Bearer ${bearerToken}` },
       });
       const result = await res.json();
@@ -389,16 +424,11 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
                   <span className="text-sm text-muted-foreground">Cargando vehículos de Cellvi...</span>
                 </div>
               ) : (
-                <Select value={vehiculoForm.cellviId} onValueChange={handleSelectCellviPlaca}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccione una placa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cellviPlateOptions.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>{v.placa}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CellviPlacaCombobox
+                  options={cellviPlateOptions}
+                  value={vehiculoForm.cellviId}
+                  onSelect={handleSelectCellviPlaca}
+                />
               )}
               {!loadingCellvi && cellviPlateOptions.length === 0 && (
                 <p className="text-sm text-muted-foreground">

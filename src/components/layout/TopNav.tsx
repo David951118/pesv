@@ -18,6 +18,8 @@ import {
   Building2,
   Trash2,
   BarChart3,
+  Wrench,
+  Boxes,
 } from "lucide-react";
 import logoAsegurar from "@/assets/logos/triangulo1 png.png";
 import { cn } from "@/lib/utils";
@@ -32,6 +34,7 @@ function getRoleLabel(role: AppRole | null): string {
     case "admin": return "Administrador";
     case "supervisor": return "Supervisor";
     case "conductor": return "Conductor";
+    case "mecanico": return "Mecánico";
     default: return "Usuario";
   }
 }
@@ -73,6 +76,9 @@ const navItems: NavItem[] = [
   // Shared management
   { title: "Documentos", href: "/documentos", icon: FolderOpen, roles: ["admin", "supervisor"] },
   { title: "Vehículos", href: "/vehiculos", icon: Car, roles: ["admin", "supervisor"] },
+  { title: "Mantenimiento", href: "/mantenimiento", icon: Wrench, roles: ["admin", "supervisor", "mecanico"] },
+  { title: "Inventario", href: "/inventario", icon: Boxes, roles: ["admin", "supervisor", "mecanico"] },
+  { title: "Operación", href: "/operacion", icon: Truck, roles: ["admin", "supervisor"] },
   { title: "Usuarios", href: "/usuarios", icon: Users, roles: ["admin", "supervisor"] },
   { title: "Auditoría", href: "/auditoria", icon: ScrollText, roles: ["admin", "supervisor"] },
   { title: "Estadísticas", href: "/estadisticas", icon: BarChart3, roles: ["admin", "supervisor"] },
@@ -259,7 +265,7 @@ export function TopNav() {
                           <div className="p-1 rounded bg-muted">
                             <User className="h-3 w-3" />
                           </div>
-                          <span>Conductor</span>
+                          <span>{getRoleLabel(role)}</span>
                         </>
                       )}
                     </div>

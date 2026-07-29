@@ -43,7 +43,9 @@ function getNovedadConductor(nov: Novedad): string {
   return "";
 }
 
-export function AlertsPopup() {
+export function AlertsPopup({
+  className = "text-nav-foreground hover:bg-nav-hover",
+}: { className?: string } = {}) {
   const { bearerToken } = useAuth();
   const navigate = useNavigate();
 
@@ -103,7 +105,7 @@ export function AlertsPopup() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative text-nav-foreground hover:bg-nav-hover"
+          className={`relative ${className}`}
         >
           <Bell className="h-5 w-5" />
           {totalAlerts > 0 && (

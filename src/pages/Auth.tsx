@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, AlertCircle, User, Lock } from "lucide-react";
+import { Loader2, AlertCircle, User, Lock, Eye, EyeOff } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { z } from "zod";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import loginBackground from "@/assets/login-background.jpeg";
+import loginBackground from "@/assets/login-background.png";
 import logoAsegurar from "@/assets/logos/Asegurar con fecha de creación Png.png";
 
 const authSchema = z.object({
@@ -20,6 +20,7 @@ const authSchema = z.object({
 export default function Auth() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noTerceroBlocked, setNoTerceroBlocked] = useState(false);
@@ -38,6 +39,8 @@ export default function Auth() {
       }
       if (role === "conductor") {
         navigate("/conductor/preoperativas", { replace: true });
+      } else if (role === "mecanico") {
+        navigate("/mantenimiento", { replace: true });
       } else if (role === "admin" || role === "supervisor") {
         navigate("/", { replace: true });
       }
@@ -170,7 +173,7 @@ export default function Auth() {
               className="space-y-4"
             >
               <div className="space-y-2">
-                <Label htmlFor="username-login" className="text-foreground font-medium">
+                <Label htmlFor="username-login" className="text-slate-700 font-medium">
                   Usuario
                 </Label>
                 <div className="flex items-center gap-3">
@@ -188,21 +191,34 @@ export default function Auth() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password-login" className="text-foreground font-medium">
+                <Label htmlFor="password-login" className="text-slate-700 font-medium">
                   Contraseña
                 </Label>
                 <div className="flex items-center gap-3">
                   <Lock className="h-5 w-5 text-primary shrink-0" />
-                  <Input
-                    id="password-login"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={loading}
-                    required
-                    className="bg-background border-border h-11"
-                  />
+                  <div className="relative flex-1">
+                    <Input
+                      id="password-login"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading}
+                      required
+                      className="bg-background border-border h-11 pr-11"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      disabled={loading}
+                      tabIndex={-1}
+                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                      className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 

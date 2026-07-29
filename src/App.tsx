@@ -18,6 +18,9 @@ import FUEC from "./pages/FUEC";
 import Mapa from "./pages/Mapa";
 import Usuarios from "./pages/Usuarios";
 import Vehiculos from "./pages/Vehiculos";
+import Mantenimiento from "./pages/Mantenimiento";
+import Inventario from "./pages/Inventario";
+import Operacion from "./pages/Operacion";
 import Auditoria from "./pages/Auditoria";
 import Estadisticas from "./pages/Estadisticas";
 import Empresas from "./pages/Empresas";
@@ -36,6 +39,8 @@ import ConductorPreoperativas from "./pages/conductor/ConductorPreoperativas";
 import ConductorDocumentos from "./pages/conductor/ConductorDocumentos";
 import ConductorFUEC from "./pages/conductor/ConductorFUEC";
 import ConductorConfiguracion from "./pages/conductor/ConductorConfiguracion";
+import ConductorCombustible from "./pages/conductor/ConductorCombustible";
+import ConductorMantenimiento from "./pages/conductor/ConductorMantenimiento";
 
 const queryClient = new QueryClient();
 
@@ -119,6 +124,30 @@ const App = () => (
               }
             />
             <Route
+              path="/mantenimiento"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "supervisor", "mecanico"]}>
+                  <Mantenimiento />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/inventario"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "supervisor", "mecanico"]}>
+                  <Inventario />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/operacion"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
+                  <Operacion />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/usuarios"
               element={
                 <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
@@ -175,6 +204,22 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["conductor"]}>
                   <ConductorDocumentos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conductor/combustible"
+              element={
+                <ProtectedRoute allowedRoles={["conductor"]}>
+                  <ConductorCombustible />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conductor/mantenimiento"
+              element={
+                <ProtectedRoute allowedRoles={["conductor"]}>
+                  <ConductorMantenimiento />
                 </ProtectedRoute>
               }
             />

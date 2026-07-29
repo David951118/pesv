@@ -83,7 +83,9 @@ export default function Empresas() {
     if (!bearerToken) return;
     setLoading(true);
     try {
-      const res = await fetch(`${base}/api/empresas`, {
+      // limit alto: el backend pagina de a 50 por defecto; sin esto no se verían
+      // las empresas recién creadas si el total supera los 50.
+      const res = await fetch(`${base}/api/empresas?limit=1000`, {
         headers: { Authorization: `Bearer ${bearerToken}` },
       });
       const json = await res.json();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext, ReactNode } from "react";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
 
-export type AppRole = "admin" | "conductor" | "supervisor";
+export type AppRole = "admin" | "conductor" | "supervisor" | "mecanico";
 
 const AUTH_STORAGE_KEY = "auth_data";
 
@@ -13,6 +13,9 @@ const REFRESH_BUFFER_MS = 5 * 60_000;
 export const API_ROLE_MAP: Record<string, { appRole: AppRole; priority: number }> = {
   ROLE_ADMIN:        { appRole: "admin",      priority: 3 },
   ROLE_CLIENTE_ADMIN:{ appRole: "supervisor",  priority: 2 },
+  // Temporal: el backend restringe ROLE_AUDITOR a solo lectura
+  ROLE_AUDITOR:      { appRole: "supervisor",  priority: 2 },
+  ROLE_MECANICO:     { appRole: "mecanico",    priority: 1.5 },
   ROLE_CLIENTE:      { appRole: "conductor",   priority: 1 },
   ROLE_USER:         { appRole: "conductor",   priority: 0 },
 };
@@ -64,6 +67,7 @@ interface AuthContextType {
   bearerToken: string | null;
   cellviToken: string | null;
   role: AppRole | null;
+  apiRoles: string[];
   empresaId: string | null;
   conductorId: string | null;
   loading: boolean;
@@ -224,6 +228,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // ── Robustez de sesión ──
+  // 1) Al volver a la pestaña (visible/focus) refrescamos si el token está por
+  //    vencer o vencido: el setTimeout de refresco no dispara de forma fiable con
+  //    la pestaña en segundo plano o el equipo suspendido (causa típica de
+  //    "token inválido" en producción).
+  // 2) Escuchamos 'auth:expired' que emite el cliente HTTP cuando un 401 no se
+  //    pudo recuperar, para cerrar sesión de forma limpia.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const stored = getStoredAuth();
+      if (!stored?.bearerToken || !stored.expiresAt) return;
+      const expiresMs = new Date(stored.expiresAt).getTime();
+      if (expiresMs - Date.now() <= REFRESH_BUFFER_MS) {
+        refreshToken();
+      }
+    };
+    const onExpired = () => clearSession();
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("auth:expired", onExpired);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("auth:expired", onExpired);
+    };
+  }, [refreshToken, clearSession]);
+
   const signIn = async (username: string, password: string) => {
     try {
       const base = getApiRndcBaseUrl();
@@ -279,6 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         bearerToken,
         cellviToken,
         role,
+        apiRoles: user?.apiRoles ?? [],
         empresaId,
         conductorId,
         loading,

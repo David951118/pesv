@@ -34,7 +34,10 @@ import {
   ImageIcon,
   Upload,
   User,
+  Gauge,
 } from "lucide-react";
+import { getVehiculoKilometraje } from "@/services/apirndc/apirndc.api";
+import { KM_FUENTE_LABELS } from "@/components/operacion/operacion.helpers";
 import { toast } from "sonner";
 import { SignaturePad } from "@/components/preoperativas/SignaturePad";
 import { uploadFileToS3 } from "@/lib/uploadToS3";
@@ -211,6 +214,7 @@ export default function ConductorPreoperativas() {
   );
   const [firmaUrl, setFirmaUrl] = useState<string>("");
   const [uploadingFirma, setUploadingFirma] = useState(false);
+  const [loadingKm, setLoadingKm] = useState(false);
 
   // Seccion Conductor state
   const [seccionConductor, setSeccionConductor, clearSeccionConductor] = useSessionState("preop-seccion-conductor", {
@@ -292,6 +296,27 @@ export default function ConductorPreoperativas() {
     },
     enabled: !!bearerToken && !!selectedVehiculo?._id,
   });
+
+  // ── Traer kilometraje actual desde Cellvi GPS ──
+  const handleConsultarKm = async () => {
+    if (!selectedVehiculo?._id) return;
+    setLoadingKm(true);
+    try {
+      const res = await getVehiculoKilometraje(selectedVehiculo._id);
+      if (res.data?.kilometraje !== null && res.data?.kilometraje !== undefined) {
+        setKilometraje(String(res.data.kilometraje));
+        toast.info(
+          `Km actual: ${res.data.kilometraje.toLocaleString("es-CO")} (${KM_FUENTE_LABELS[res.data.fuente] ?? res.data.fuente})`
+        );
+      } else {
+        toast.info("Sin kilometraje disponible para este vehículo");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al consultar el kilometraje");
+    } finally {
+      setLoadingKm(false);
+    }
+  };
 
   // ── Check which vehicles already have a preop today ──
   const { data: preopHoyMap = {} } = useQuery({
@@ -641,7 +666,7 @@ export default function ConductorPreoperativas() {
 
   // ── Render: Item row ──
   const renderItem = (item: { key: string; label: string }) => {
-    const s = formItems[item.key] || { estado: null, observaciones: "", fotoCapturada: false };
+    const s: ItemState = formItems[item.key] || { estado: null, observaciones: "", fotoCapturada: false, fotoUrl: "", uploadingFoto: false };
     const isKit = item.key === "kitPrimerosAuxilios" || item.key === "equipoCarretera";
 
     // Para kits, BUENO/REGULAR/MALO disparan el popup informativo.
@@ -852,13 +877,26 @@ export default function ConductorPreoperativas() {
           {/* Kilometraje */}
           <div className="bg-card border rounded-lg p-3">
             <label className="text-sm font-medium mb-1 block">Kilometraje actual</label>
-            <Input
-              type="number"
-              placeholder={ultimoKm ? `Último: ${ultimoKm.toLocaleString("es-CO")} km` : "Ingrese el kilometraje"}
-              value={kilometraje}
-              onChange={(e) => setKilometraje(e.target.value)}
-              min={1}
-            />
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                placeholder={ultimoKm ? `Último: ${ultimoKm.toLocaleString("es-CO")} km` : "Ingrese el kilometraje"}
+                value={kilometraje}
+                onChange={(e) => setKilometraje(e.target.value)}
+                min={1}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                title="Traer kilometraje desde Cellvi GPS"
+                disabled={loadingKm}
+                onClick={handleConsultarKm}
+              >
+                {loadingKm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gauge className="h-4 w-4" />}
+              </Button>
+            </div>
             {ultimoKm != null && (
               <p className="text-xs text-muted-foreground mt-1">
                 Ultimo: {ultimoKm.toLocaleString("es-CO")} km
@@ -1515,7 +1553,7 @@ export default function ConductorPreoperativas() {
               <div className="flex items-center justify-between">
                 <DialogTitle className="flex items-center gap-3">
                   <ClipboardCheck className="h-5 w-5 text-primary" />
-                  Inspección — {viewingItem && typeof viewingItem.vehiculo === "object" ? viewingItem.vehiculo?.placa : viewingItem?.vehiculo || "—"}
+                  Inspección — {!viewingItem ? "—" : typeof viewingItem.vehiculo === "object" ? viewingItem.vehiculo?.placa || "—" : viewingItem.vehiculo || "—"}
                 </DialogTitle>
                 <Button
                   variant="outline"

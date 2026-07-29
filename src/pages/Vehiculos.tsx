@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { CellviPlacaCombobox } from "@/components/documentos/CellviPlacaCombobox";
 import {
   Select,
   SelectContent,
@@ -67,7 +68,11 @@ import {
   Car,
   Pencil,
   Trash2,
+  Gauge,
+  RefreshCw,
 } from "lucide-react";
+import { getVehiculoKilometraje } from "@/services/apirndc/apirndc.api";
+import { KM_FUENTE_LABELS } from "@/components/operacion/operacion.helpers";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -160,62 +165,94 @@ export default function Vehiculos() {
   const [viewingVehiculo, setViewingVehiculo] = useState<VehiculoData | null>(null);
   const [vehiculoForm, setVehiculoForm, clearVehiculoForm] = useSessionState("veh-form", initialVehiculoForm);
   const [loadingCellvi, setLoadingCellvi] = useState(false);
+  // Opciones de placa (id + placa) para el selector de Cellvi
+  const [cellviPlateOptions, setCellviPlateOptions] = useState<{ id: string; placa: string }[]>([]);
+  // Caché de detalles de cada vehículo Cellvi (respuesta de /show), llenada on-demand
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [cellviVehiclesData, setCellviVehiclesData] = useState<Record<string, any>>({});
 
-  // Fetch all Cellvi vehicles when dialog opens
+  const isAdmin = role === "admin";
+  // Empresa afiliadora elegida al crear (solo admin; los demás roles usan su propia empresa)
+  const [createEmpresa, setCreateEmpresa] = useState("");
   const cellviVehiculos = user?.vehiculos || [];
 
+  // Cargar las placas del selector al abrir el diálogo:
+  // - Admin: TODOS los vehículos de Cellvi (/cellvi/vehiculo/flat/list). El admin de Cellvi no
+  //   tiene vehículos "asignados", por eso user.vehiculos viene vacío y hay que pedir la lista completa.
+  // - Otros roles: solo los vehículos asignados al usuario (user.vehiculos).
   useEffect(() => {
-    if (!showCreateDialog || !cellviToken || cellviVehiculos.length === 0) return;
-    // Don't re-fetch if already loaded
-    if (Object.keys(cellviVehiclesData).length > 0) return;
+    if (!showCreateDialog) return;
+    let cancelled = false;
 
-    setLoadingCellvi(true);
-    const fetchAll = async () => {
-      const results: Record<string, any> = {};
-      await Promise.all(
-        cellviVehiculos.map(async (v) => {
-          try {
-            const res = await fetch(`/cellviapi/cellvi/vehiculo/${v.id}/show`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${cellviToken}`,
-                "Content-Type": "application/json",
-              },
-            });
-            if (res.ok) {
-              results[v.id.toString()] = await res.json();
-            }
-          } catch {
-            // skip failed ones
+    const load = async () => {
+      if (isAdmin) {
+        if (!cellviToken) return;
+        setLoadingCellvi(true);
+        try {
+          const res = await fetch(`/cellviapi/cellvi/vehiculo/flat/list`, {
+            headers: { Authorization: `Bearer ${cellviToken}` },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const raw: any[] = Array.isArray(json) ? json : json?.data ?? [];
+            const list = raw
+              .map((v) => ({ id: String(v.id), placa: v.placa }))
+              .filter((v) => v.id && v.placa);
+            if (!cancelled) setCellviPlateOptions(list);
           }
-        })
-      );
-      setCellviVehiclesData(results);
-      setLoadingCellvi(false);
+        } catch {
+          // ignore
+        } finally {
+          if (!cancelled) setLoadingCellvi(false);
+        }
+      } else {
+        setCellviPlateOptions(
+          cellviVehiculos.map((v) => ({ id: String(v.id), placa: v.placa })),
+        );
+      }
     };
-    fetchAll();
-  }, [showCreateDialog, cellviToken]);
 
-  // Build plate list from fetched Cellvi data
-  const cellviPlateOptions = Object.entries(cellviVehiclesData).map(([id, data]) => ({
-    id,
-    placa: data.placa || `ID: ${id}`,
-  }));
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCreateDialog, cellviToken, isAdmin]);
 
-  // Fill form when selecting a plate
-  const handleSelectCellviPlaca = (cellviId: string) => {
-    const data = cellviVehiclesData[cellviId];
+  // Fill form when selecting a plate (detalles on-demand + cacheados)
+  const handleSelectCellviPlaca = async (cellviId: string) => {
+    const opt = cellviPlateOptions.find((o) => o.id === cellviId);
+    // Refleja la selección de inmediato (al menos la placa)
+    setVehiculoForm((f) => ({ ...f, cellviId, placa: opt?.placa || f.placa }));
+
+    let data = cellviVehiclesData[cellviId];
+    if (!data && cellviToken) {
+      try {
+        const res = await fetch(`/cellviapi/cellvi/vehiculo/${cellviId}/show`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${cellviToken}`,
+            "Content-Type": "application/json",
+          },
+        });
+        if (res.ok) {
+          data = await res.json();
+          setCellviVehiclesData((prev) => ({ ...prev, [cellviId]: data }));
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (!data) return;
 
     const fechaRaw = data.fechaMatricula || "";
     const fechaMatricula = fechaRaw ? fechaRaw.substring(0, 10) : "";
 
-    setVehiculoForm({
-      ...vehiculoForm,
+    setVehiculoForm((f) => ({
+      ...f,
       cellviId,
-      placa: data.placa || "",
+      placa: data.placa || f.placa,
       marca: data.linea?.marca?.marca || "",
       linea: data.linea?.linea || "",
       modelo: data.modelo?.toString() || "",
@@ -223,7 +260,7 @@ export default function Vehiculos() {
       motor: data.serialMotor || "",
       chasis: data.serialChasis || "",
       fechaMatricula,
-    });
+    }));
   };
 
   // Fetch vehiculos list
@@ -231,7 +268,9 @@ export default function Vehiculos() {
     queryKey: ["vehiculos-list"],
     queryFn: async () => {
       if (!bearerToken) throw new Error("No autenticado");
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos`, {
+      // limit alto: la lista pagina/busca en cliente, así que traemos todos los vehículos
+      // (el backend devuelve 50 por defecto y dejaría fuera los recién creados).
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos?limit=1000`, {
         headers: { Authorization: `Bearer ${bearerToken}` },
       });
       const result = await res.json();
@@ -242,7 +281,6 @@ export default function Vehiculos() {
   });
 
   // Fetch terceros for propietario select — admin gets all, supervisor gets empresa-filtered
-  const isAdmin = role === "admin";
   const { data: empresasList = [] } = useEmpresasList();
   const [empresaFilter, setEmpresaFilter] = useState<string>("all");
   const { data: terceros } = useQuery({
@@ -262,11 +300,45 @@ export default function Vehiculos() {
     enabled: !!bearerToken && (isAdmin || !!empresaId),
   });
 
+  // Kilometraje en vivo del vehículo en detalle (Cellvi GPS → preop → manual)
+  const { data: kmRes, isFetching: kmLoading } = useQuery({
+    queryKey: ["vehiculo-km", viewingVehiculo?._id],
+    queryFn: ({ signal }) =>
+      getVehiculoKilometraje(viewingVehiculo!._id, undefined, signal),
+    enabled: !!viewingVehiculo?._id,
+    staleTime: 60_000,
+  });
+
+  // Consultar y PERSISTIR el km actual desde Cellvi
+  const actualizarKmMutation = useMutation({
+    mutationFn: () =>
+      getVehiculoKilometraje(viewingVehiculo!._id, { actualizar: true }),
+    onSuccess: (res) => {
+      const km = res.data?.kilometraje;
+      toast.success(
+        km != null
+          ? `Kilometraje actualizado: ${km.toLocaleString("es-CO")}`
+          : "El equipo no reporta kilometraje",
+      );
+      queryClient.invalidateQueries({ queryKey: ["vehiculo-km", viewingVehiculo?._id] });
+      queryClient.invalidateQueries({ queryKey: ["vehiculos-list"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // Create vehiculo mutation
   const createVehiculoMutation = useMutation({
     mutationFn: async () => {
       if (!bearerToken) throw new Error("No autenticado");
-      if (!empresaId) throw new Error("No se encontró empresa. Cierre sesión e inicie sesión de nuevo.");
+      // Admin elige la empresa afiliadora; los demás roles usan la suya.
+      const empresaAfiliadora = isAdmin ? createEmpresa : empresaId;
+      if (!empresaAfiliadora) {
+        throw new Error(
+          isAdmin
+            ? "Seleccione la empresa afiliadora del vehículo."
+            : "No se encontró empresa. Cierre sesión e inicie sesión de nuevo.",
+        );
+      }
 
       const body = {
         placa: vehiculoForm.placa,
@@ -286,7 +358,7 @@ export default function Vehiculos() {
         capacidadPasajeros: Number(vehiculoForm.capacidadPasajeros) || 0,
         fechaMatricula: vehiculoForm.fechaMatricula,
         propietario: vehiculoForm.propietario,
-        empresaAfiliadora: empresaId,
+        empresaAfiliadora,
         fechaAfiliacion: vehiculoForm.fechaAfiliacion,
         estado: vehiculoForm.estado,
         kilometrajeActual: Number(vehiculoForm.kilometrajeActual) || 0,
@@ -320,6 +392,7 @@ export default function Vehiculos() {
     clearVehiculoForm();
     clearCreateDialog();
     setCellviVehiclesData({});
+    setCreateEmpresa("");
   };
 
   // Restore viewing vehiculo from URL
@@ -518,6 +591,55 @@ export default function Vehiculos() {
                 </div>
               </div>
 
+              {/* Kilometraje actual */}
+              <div className="bg-card border rounded-lg p-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-lg bg-primary/10">
+                      <Gauge className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Kilometraje actual</p>
+                      <p className="text-3xl font-bold text-foreground leading-tight">
+                        {kmLoading && !kmRes ? (
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        ) : (
+                          <>
+                            {(kmRes?.data?.kilometraje ?? viewingVehiculo.kilometrajeActual)?.toLocaleString("es-CO") ?? "-"}
+                            <span className="text-base font-normal text-muted-foreground"> km</span>
+                          </>
+                        )}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {kmRes?.data?.fuente && (
+                          <Badge variant="outline">
+                            {KM_FUENTE_LABELS[kmRes.data.fuente] ?? kmRes.data.fuente}
+                          </Badge>
+                        )}
+                        {kmRes?.data?.fecha && (
+                          <span className="text-xs text-muted-foreground">
+                            {(() => { try { return format(new Date(kmRes.data.fecha), "dd MMM yyyy HH:mm", { locale: es }); } catch { return ""; } })()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => actualizarKmMutation.mutate()}
+                    disabled={actualizarKmMutation.isPending}
+                    className="gap-2"
+                  >
+                    {actualizarKmMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    Actualizar desde Cellvi
+                  </Button>
+                </div>
+              </div>
+
               {/* Vehicle details */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Información General</h3>
@@ -581,10 +703,6 @@ export default function Vehiculos() {
                   <div className="bg-card border rounded-lg p-4">
                     <p className="text-sm text-muted-foreground">Capacidad Pasajeros</p>
                     <p className="font-medium">{viewingVehiculo.capacidadPasajeros || "-"}</p>
-                  </div>
-                  <div className="bg-card border rounded-lg p-4">
-                    <p className="text-sm text-muted-foreground">Kilometraje Actual</p>
-                    <p className="font-medium">{viewingVehiculo.kilometrajeActual?.toLocaleString() || "-"}</p>
                   </div>
                 </div>
 
@@ -833,21 +951,11 @@ export default function Vehiculos() {
                     <span className="text-sm text-muted-foreground">Cargando vehículos de Cellvi...</span>
                   </div>
                 ) : (
-                  <Select
+                  <CellviPlacaCombobox
+                    options={cellviPlateOptions}
                     value={vehiculoForm.cellviId}
-                    onValueChange={handleSelectCellviPlaca}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccione una placa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cellviPlateOptions.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.placa}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onSelect={handleSelectCellviPlaca}
+                  />
                 )}
                 {!loadingCellvi && cellviPlateOptions.length === 0 && (
                   <p className="text-sm text-muted-foreground">
@@ -1059,6 +1167,21 @@ export default function Vehiculos() {
                   </Select>
                 </div>
               </div>
+              {isAdmin && !editingVehiculo && (
+                <div className="space-y-2">
+                  <Label>Empresa afiliadora *</Label>
+                  <Select value={createEmpresa} onValueChange={setCreateEmpresa}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccione la empresa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {empresasList.map((e) => (
+                        <SelectItem key={e._id} value={e._id}>{e.razonSocial}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Propietario *</Label>
                 <Select
@@ -1090,7 +1213,8 @@ export default function Vehiculos() {
                 disabled={
                   createVehiculoMutation.isPending ||
                   updateVehiculoMutation.isPending ||
-                  !vehiculoForm.placa
+                  !vehiculoForm.placa ||
+                  (isAdmin && !editingVehiculo && !createEmpresa)
                 }
               >
                 {(createVehiculoMutation.isPending || updateVehiculoMutation.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSessionState } from "@/hooks/useSessionState";
 import { useAuth } from "@/hooks/useAuth";
+import { RolesMultiSelect, splitRoles, SHOW_ACCESS_ROLES } from "@/components/usuarios/RolesMultiSelect";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { uploadFileToS3 } from "@/lib/uploadToS3";
@@ -99,6 +100,7 @@ interface TerceroData {
   nombres: string;
   apellidos: string;
   roles: string[];
+  rolesSistema?: string[];
   usuarioCellvi: string;
   fotoUrl?: string;
   foto?: { url: string; key: string };
@@ -133,6 +135,9 @@ function getRolLabel(rol: string): string {
     CLIENTE: "Cliente",
     ADMINISTRATIVO: "Administrativo",
     PROVEEDOR: "Proveedor",
+    MECANICO: "Mecánico",
+    ROLE_MECANICO: "Mecánico (acceso)",
+    ROLE_AUDITOR: "Auditor (acceso)",
   };
   return labels[rol] || rol;
 }
@@ -161,7 +166,7 @@ export default function Usuarios() {
     tipoId: "CC",
     nombres: "",
     apellidos: "",
-    rol: "CONDUCTOR",
+    roles: ["CONDUCTOR"] as string[],
     usuarioCellvi: "",
     telefono: "",
     tipoSangre: "",
@@ -182,7 +187,7 @@ export default function Usuarios() {
     tipoId: "CC",
     nombres: "",
     apellidos: "",
-    rol: "CONDUCTOR",
+    roles: ["CONDUCTOR"] as string[],
     usuarioCellvi: "",
     telefono: "",
     tipoSangre: "",
@@ -223,8 +228,10 @@ export default function Usuarios() {
     queryFn: async () => {
       if (!bearerToken) throw new Error("No autenticado");
       const base = getApiRndcBaseUrl();
+      // limit alto: el backend pagina de a 50 por defecto; sin esto el admin
+      // (que ve todos los terceros) no vería lo recién creado si supera los 50.
       const url = isAdmin
-        ? `${base}/api/terceros`
+        ? `${base}/api/terceros?limit=1000`
         : `${base}/api/terceros/empresa/${empresaId}`;
       const res = await fetch(url, {
         headers: {
@@ -316,20 +323,22 @@ export default function Usuarios() {
       const targetEmpresa = isAdmin ? terceroForm.empresaId : empresaId;
       if (!targetEmpresa) throw new Error(isAdmin ? "Seleccione una empresa" : "No se encontró empresa. Cierre sesión e inicie sesión de nuevo.");
 
+      const { roles, rolesSistema } = splitRoles(terceroForm.roles ?? []);
       const body: Record<string, unknown> = {
         identificacion: terceroForm.identificacion,
         tipoId: terceroForm.tipoId,
         empresa: targetEmpresa,
         nombres: terceroForm.nombres,
         apellidos: terceroForm.apellidos,
-        roles: [terceroForm.rol],
+        roles,
+        rolesSistema,
         usuarioCellvi: terceroForm.usuarioCellvi,
         contacto: {
           telefono: terceroForm.telefono,
         },
       };
 
-      if (terceroForm.rol === "CONDUCTOR" && terceroForm.tipoSangre) {
+      if (roles.includes("CONDUCTOR") && terceroForm.tipoSangre) {
         body.datosConductor = { tipoSangre: terceroForm.tipoSangre };
       }
 
@@ -375,20 +384,22 @@ export default function Usuarios() {
       const targetEmpresa = isAdmin ? editForm.empresaId : empresaId;
       if (!targetEmpresa) throw new Error(isAdmin ? "Seleccione una empresa" : "No se encontró empresa.");
 
+      const { roles, rolesSistema } = splitRoles(editForm.roles ?? []);
       const body: Record<string, unknown> = {
         identificacion: editForm.identificacion,
         tipoId: editForm.tipoId,
         empresa: targetEmpresa,
         nombres: editForm.nombres,
         apellidos: editForm.apellidos,
-        roles: [editForm.rol],
+        roles,
+        rolesSistema,
         usuarioCellvi: editForm.usuarioCellvi,
         contacto: {
           telefono: editForm.telefono,
         },
       };
 
-      if (editForm.rol === "CONDUCTOR" && editForm.tipoSangre) {
+      if (roles.includes("CONDUCTOR") && editForm.tipoSangre) {
         body.datosConductor = { tipoSangre: editForm.tipoSangre };
       }
 
@@ -419,16 +430,18 @@ export default function Usuarios() {
       setEditPhoto(initialPhotoState);
       // Refresh viewing user
       if (viewingUser) {
+        const split = splitRoles(editForm.roles ?? []);
         const updatedUser: TerceroData = {
           ...viewingUser,
           identificacion: editForm.identificacion,
           tipoId: editForm.tipoId,
           nombres: editForm.nombres,
           apellidos: editForm.apellidos,
-          roles: [editForm.rol],
+          roles: split.roles,
+          rolesSistema: split.rolesSistema,
           usuarioCellvi: editForm.usuarioCellvi,
           contacto: { telefono: editForm.telefono },
-          datosConductor: editForm.rol === "CONDUCTOR" && editForm.tipoSangre
+          datosConductor: split.roles.includes("CONDUCTOR") && editForm.tipoSangre
             ? { tipoSangre: editForm.tipoSangre }
             : undefined,
           foto: editPhoto.publicUrl && editPhoto.key
@@ -479,6 +492,8 @@ export default function Usuarios() {
     if (!terceroForm.apellidos.trim()) errors.apellidos = "Apellidos es requerido";
     if (!terceroForm.identificacion.trim()) errors.identificacion = "Identificación es requerida";
     if (!terceroForm.usuarioCellvi.trim()) errors.usuarioCellvi = "Usuario Cellvi es requerido";
+    if (splitRoles(terceroForm.roles ?? []).roles.length === 0)
+      errors.roles = "Seleccione al menos un rol de negocio";
     if (isAdmin && !terceroForm.empresaId) errors.empresaId = "Seleccione una empresa";
     setCreateErrors(errors);
     return Object.keys(errors).length === 0;
@@ -508,7 +523,7 @@ export default function Usuarios() {
       tipoId: target.tipoId ?? "CC",
       nombres: target.nombres ?? "",
       apellidos: target.apellidos ?? "",
-      rol: target.roles?.[0] || "CONDUCTOR",
+      roles: [...(target.roles ?? []), ...(target.rolesSistema ?? [])],
       usuarioCellvi: target.usuarioCellvi ?? "",
       telefono: target.contacto?.telefono || "",
       tipoSangre: target.datosConductor?.tipoSangre || "",
@@ -897,9 +912,14 @@ export default function Usuarios() {
                     <p className="text-muted-foreground">
                       {viewingUser.tipoId} {viewingUser.identificacion}
                     </p>
-                    <div className="flex gap-2 mt-2">
+                    <div className="flex flex-wrap gap-2 mt-2">
                       {viewingUser.roles?.map((rol) => (
                         <Badge key={rol} variant="secondary">
+                          {getRolLabel(rol)}
+                        </Badge>
+                      ))}
+                      {viewingUser.rolesSistema?.map((rol) => (
+                        <Badge key={rol} variant="default">
                           {getRolLabel(rol)}
                         </Badge>
                       ))}
@@ -974,6 +994,7 @@ export default function Usuarios() {
                     <SelectItem value="CLIENTE">Cliente</SelectItem>
                     <SelectItem value="ADMINISTRATIVO">Administrativo</SelectItem>
                     <SelectItem value="PROVEEDOR">Proveedor</SelectItem>
+                    <SelectItem value="MECANICO">Mecánico</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button onClick={() => setShowCreateDialog(true)}>
@@ -1038,6 +1059,11 @@ export default function Usuarios() {
                               <TableCell>
                                 {tercero.roles?.map((rol) => (
                                   <Badge key={rol} variant="secondary" className="mr-1">
+                                    {getRolLabel(rol)}
+                                  </Badge>
+                                ))}
+                                {tercero.rolesSistema?.map((rol) => (
+                                  <Badge key={rol} variant="default" className="mr-1">
                                     {getRolLabel(rol)}
                                   </Badge>
                                 ))}
@@ -1139,22 +1165,22 @@ export default function Usuarios() {
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Rol *</Label>
-                <Select
-                  value={terceroForm.rol}
-                  onValueChange={(value) => setTerceroForm({ ...terceroForm, rol: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CONDUCTOR">Conductor</SelectItem>
-                    <SelectItem value="PROPIETARIO">Propietario</SelectItem>
-                    <SelectItem value="CLIENTE">Cliente</SelectItem>
-                    <SelectItem value="ADMINISTRATIVO">Administrativo</SelectItem>
-                    <SelectItem value="PROVEEDOR">Proveedor</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Roles *</Label>
+                <RolesMultiSelect
+                  value={terceroForm.roles ?? []}
+                  onChange={(roles) => { setTerceroForm({ ...terceroForm, roles }); setCreateErrors((p) => ({ ...p, roles: "" })); }}
+                />
+                {createErrors.roles && <p className="text-xs text-destructive">{createErrors.roles}</p>}
+                <p className="text-xs text-muted-foreground">
+                  {SHOW_ACCESS_ROLES ? (
+                    <>
+                      El <strong>Perfil</strong> son etiquetas de la persona. El <strong>Acceso al sistema</strong>
+                      {" "}(Mecánico/Auditor) permite iniciar sesión y requiere <strong>Usuario Cellvi</strong>.
+                    </>
+                  ) : (
+                    <>Seleccione el <strong>perfil</strong> de la persona.</>
+                  )}
+                </p>
               </div>
               {isAdmin && renderEmpresaCombobox(
                 terceroForm.empresaId,
@@ -1236,7 +1262,7 @@ export default function Usuarios() {
               {/* Photo upload replaces old Foto URL text input */}
               {renderPhotoUpload(createPhoto, setCreatePhoto, createFileInputRef)}
 
-              {terceroForm.rol === "CONDUCTOR" && (
+              {(terceroForm.roles ?? []).includes("CONDUCTOR") && (
                 <div className="space-y-2">
                   <Label>Tipo de Sangre</Label>
                   <Select
@@ -1292,22 +1318,21 @@ export default function Usuarios() {
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Rol *</Label>
-                <Select
-                  value={editForm.rol}
-                  onValueChange={(value) => setEditForm({ ...editForm, rol: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CONDUCTOR">Conductor</SelectItem>
-                    <SelectItem value="PROPIETARIO">Propietario</SelectItem>
-                    <SelectItem value="CLIENTE">Cliente</SelectItem>
-                    <SelectItem value="ADMINISTRATIVO">Administrativo</SelectItem>
-                    <SelectItem value="PROVEEDOR">Proveedor</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Roles *</Label>
+                <RolesMultiSelect
+                  value={editForm.roles ?? []}
+                  onChange={(roles) => setEditForm({ ...editForm, roles })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {SHOW_ACCESS_ROLES ? (
+                    <>
+                      El <strong>Perfil</strong> son etiquetas de la persona. El <strong>Acceso al sistema</strong>
+                      {" "}(Mecánico/Auditor) permite iniciar sesión y requiere <strong>Usuario Cellvi</strong>.
+                    </>
+                  ) : (
+                    <>Seleccione el <strong>perfil</strong> de la persona.</>
+                  )}
+                </p>
               </div>
               {isAdmin && renderEmpresaCombobox(
                 editForm.empresaId,
@@ -1386,7 +1411,7 @@ export default function Usuarios() {
                 viewingUser ? getTerceroPhotoUrl(viewingUser) : undefined,
               )}
 
-              {editForm.rol === "CONDUCTOR" && (
+              {(editForm.roles ?? []).includes("CONDUCTOR") && (
                 <div className="space-y-2">
                   <Label>Tipo de Sangre</Label>
                   <Select

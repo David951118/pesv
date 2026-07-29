@@ -6,6 +6,10 @@
 
 @layer base {
   :root {
+    /* Hace que los controles nativos (date pickers, spinners, scrollbars)
+       se rendericen en modo claro. Sobrescrito a 'dark' en .dark */
+    color-scheme: light;
+
     /* Paleta Corporativa Asegurar Limitada */
     /* Azul principal #0B5EA8 → HSL: 210 85% 35% */
     /* Azul oscuro #0A2E52 → HSL: 212 78% 18% */
@@ -87,6 +91,10 @@
   }
 
   .dark {
+    /* Controles nativos (date pickers, ícono de calendario, spinners) en modo oscuro
+       → el texto y el ícono del calendario quedan claros y visibles */
+    color-scheme: dark;
+
     --background: 215 30% 8%;
     --foreground: 210 20% 95%;
 
@@ -125,6 +133,15 @@
     --nav-foreground: 0 0% 100%;
     --nav-hover: 210 80% 35%;
     --nav-active: 210 80% 42%;
+
+    --sidebar-background: 215 28% 11%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 210 80% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 25% 18%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 215 25% 20%;
+    --sidebar-ring: 210 80% 50%;
 
     --table-header: 215 25% 14%;
     --table-row-hover: 215 25% 12%;

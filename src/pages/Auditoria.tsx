@@ -115,6 +115,17 @@ interface PreoperacionalAPI {
   seccionDelantera: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionMedia: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionTrasera: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
+  seccionAseo?: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
+  seccionConductor?: {
+    horasSueno: number;
+    estadoSalud: string;
+    estadoSaludObservaciones?: string;
+    tomaMedicamentos: boolean;
+    medicamentosDetalle?: string;
+    consumoSustancias: boolean;
+    sustanciasDetalle?: string;
+    selfieUrl?: string;
+  };
   deletedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -921,11 +932,69 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             </div>
           )}
 
+          {/* Salud del Conductor */}
+          {preop.seccionConductor && (
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3">
+              <h4 className="text-sm font-semibold">Salud del Conductor</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Horas de Sueño</p>
+                  <p className={`font-medium ${(preop.seccionConductor.horasSueno ?? 8) < 8 ? "text-destructive" : ""}`}>
+                    {preop.seccionConductor.horasSueno}h
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Estado de Salud</p>
+                  <Badge variant={preop.seccionConductor.estadoSalud === "BUENO" ? "default" : preop.seccionConductor.estadoSalud === "REGULAR" ? "secondary" : "destructive"}>
+                    {preop.seccionConductor.estadoSalud}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Medicamentos</p>
+                  <p className="font-medium">{preop.seccionConductor.tomaMedicamentos ? "Sí" : "No"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Sustancias</p>
+                  <p className={`font-medium ${preop.seccionConductor.consumoSustancias ? "text-destructive" : ""}`}>
+                    {preop.seccionConductor.consumoSustancias ? "Sí" : "No"}
+                  </p>
+                </div>
+              </div>
+              {preop.seccionConductor.estadoSaludObservaciones && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Observaciones de salud</p>
+                  <p className="text-sm">{preop.seccionConductor.estadoSaludObservaciones}</p>
+                </div>
+              )}
+              {preop.seccionConductor.tomaMedicamentos && preop.seccionConductor.medicamentosDetalle && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Detalle de medicamentos</p>
+                  <p className="text-sm">{preop.seccionConductor.medicamentosDetalle}</p>
+                </div>
+              )}
+              {preop.seccionConductor.consumoSustancias && preop.seccionConductor.sustanciasDetalle && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Detalle de sustancias</p>
+                  <p className="text-sm">{preop.seccionConductor.sustanciasDetalle}</p>
+                </div>
+              )}
+              {preop.seccionConductor.selfieUrl && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Selfie del conductor</p>
+                  <a href={preop.seccionConductor.selfieUrl} target="_blank" rel="noreferrer">
+                    <img src={preop.seccionConductor.selfieUrl} alt="Selfie conductor" className="h-24 w-24 rounded-lg object-cover border" />
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Sections */}
           <div className="space-y-4 pt-2 border-t">
             {renderSection(preop.seccionDelantera, "Sección Delantera")}
             {renderSection(preop.seccionMedia, "Sección Media")}
             {renderSection(preop.seccionTrasera, "Sección Trasera")}
+            {renderSection(preop.seccionAseo, "Sección Aseo")}
           </div>
         </div>
       </DialogContent>

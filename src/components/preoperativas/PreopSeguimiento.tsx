@@ -335,9 +335,16 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
     const data = historialQuery.data;
     if (!data) return [];
     const raw = data as any;
-    if (Array.isArray(raw.novedades)) return raw.novedades;
-    if (raw.data && Array.isArray(raw.data.novedades)) return raw.data.novedades;
-    return [];
+    const list = Array.isArray(raw.novedades)
+      ? raw.novedades
+      : raw.data && Array.isArray(raw.data.novedades)
+        ? raw.data.novedades
+        : [];
+    // El backend expone el estado de la novedad como `estadoCorreccion`
+    return list.map((n: any) => ({
+      ...n,
+      estado: n.estado ?? n.estadoCorreccion ?? "PENDIENTE",
+    }));
   }, [historialQuery.data]);
 
   // Timeline: combine historial entries (from each novedad) + annotations, sorted by date

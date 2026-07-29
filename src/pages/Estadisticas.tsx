@@ -2,10 +2,14 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
+import { getKpisGerenciales } from "@/services/apirndc";
+import { formatCOP, formatKm } from "@/components/mantenimiento/mantenimiento.helpers";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { ContentCard } from "@/components/layout/ContentCard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,7 +37,13 @@ import {
   CheckCircle,
   XCircle,
   Calendar,
+  Gauge,
+  Activity,
+  DollarSign,
+  Wallet,
+  Trophy,
 } from "lucide-react";
+import type { ApiRndcKpisGerenciales } from "@/services/apirndc/apirndc.types";
 import {
   BarChart,
   Bar,
@@ -210,6 +220,10 @@ export default function Estadisticas() {
   const [conductorId, setConductorId] = useState<string>("all");
   const [chartType, setChartType] = useState<ChartType>("pie");
 
+  // Filtros del tab gerencial (rango opcional, por defecto histórico completo)
+  const [kpiDesde, setKpiDesde] = useState("");
+  const [kpiHasta, setKpiHasta] = useState("");
+
   const clearFilters = () => {
     setFechaDesde("");
     setFechaHasta("");
@@ -351,6 +365,39 @@ export default function Estadisticas() {
       .filter((d) => d.value > 0);
   }, [estadisticas]);
 
+  // ── KPIs Gerenciales ──
+  const { data: kpis, isLoading: kpisLoading } = useQuery({
+    queryKey: ["kpis-gerenciales", { desde: kpiDesde, hasta: kpiHasta }],
+    queryFn: async ({ signal }) => {
+      const params: { desde?: string; hasta?: string } = {};
+      if (kpiDesde) params.desde = kpiDesde;
+      if (kpiHasta) params.hasta = kpiHasta;
+      const res = await getKpisGerenciales(params, signal);
+      return (res.data ?? null) as ApiRndcKpisGerenciales | null;
+    },
+    enabled: !!bearerToken,
+  });
+
+  // Pie Preventivo vs Correctivo
+  const kpiPieData = useMemo(() => {
+    const m = kpis?.mantenimiento;
+    if (!m) return [];
+    return [
+      { name: "Preventivo", value: m.preventivos, color: COLOR_PRIMARY },
+      { name: "Correctivo", value: m.correctivos, color: COLOR_RECHAZADO },
+    ].filter((d) => d.value > 0);
+  }, [kpis]);
+
+  // Top 10 vehículos más costosos (barras apiladas)
+  const kpiBarData = useMemo(() => {
+    if (!kpis?.rankingVehiculos) return [];
+    return kpis.rankingVehiculos.slice(0, 10).map((v) => ({
+      placa: v.placa,
+      costoMantenimiento: v.costoMantenimiento,
+      costoCombustible: v.costoCombustible,
+    }));
+  }, [kpis]);
+
   const renderChart = () => {
     switch (chartType) {
       case "pie":
@@ -435,9 +482,17 @@ export default function Estadisticas() {
       <PageContainer>
         <ModuleHeader
           title="Estadísticas"
-          description="Métricas e indicadores de preoperacionales"
+          description="Métricas e indicadores de la flota"
           icon={BarChart3}
         />
+
+        <Tabs defaultValue="preoperacionales" className="mt-6">
+          <TabsList>
+            <TabsTrigger value="preoperacionales">Preoperacionales</TabsTrigger>
+            <TabsTrigger value="gerencial">Gerencial (KPIs)</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="preoperacionales">
 
         {/* Filtros */}
         <ContentCard className="mt-6" header={{ title: "Filtros", icon: <Calendar className="h-4 w-4" /> }}>
@@ -782,6 +837,253 @@ export default function Estadisticas() {
             <p className="text-sm text-muted-foreground text-center py-6">Sin datos</p>
           )}
         </ContentCard>
+
+          </TabsContent>
+
+          {/* ── Tab Gerencial (KPIs) ── */}
+          <TabsContent value="gerencial">
+            {/* Filtro de rango de fechas (opcional) */}
+            <ContentCard
+              className="mt-6"
+              header={{ title: "Filtros", subtitle: "Rango opcional — por defecto histórico completo", icon: <Calendar className="h-4 w-4" /> }}
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Desde</label>
+                  <Input type="date" value={kpiDesde} onChange={(e) => setKpiDesde(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
+                  <Input type="date" value={kpiHasta} onChange={(e) => setKpiHasta(e.target.value)} />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setKpiDesde("");
+                      setKpiHasta("");
+                    }}
+                    className="w-full"
+                  >
+                    Limpiar rango
+                  </Button>
+                </div>
+              </div>
+            </ContentCard>
+
+            {kpisLoading ? (
+              <div className="mt-6 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-28 w-full rounded-lg" />
+                  ))}
+                </div>
+                <Skeleton className="h-[320px] w-full rounded-lg" />
+                <Skeleton className="h-[360px] w-full rounded-lg" />
+              </div>
+            ) : !kpis ? (
+              <ContentCard className="mt-6">
+                <p className="text-sm text-muted-foreground text-center py-10">
+                  Sin datos para el periodo
+                </p>
+              </ContentCard>
+            ) : (
+              <>
+                {/* KPI cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                  <ContentCard className="border-l-4 border-l-green-600">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Disponibilidad de flota</p>
+                        <p className="text-3xl font-bold text-green-600">
+                          {kpis.flota.disponibilidad !== null
+                            ? `${kpis.flota.disponibilidad.toFixed(1)}%`
+                            : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {kpis.flota.disponibles}/{kpis.flota.total} disponibles
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-green-100 text-green-600">
+                        <Gauge className="h-6 w-6" />
+                      </div>
+                    </div>
+                  </ContentCard>
+
+                  <ContentCard className="border-l-4 border-l-blue-600">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Preventivo / Correctivo</p>
+                        <p className="text-3xl font-bold text-blue-600">
+                          {kpis.mantenimiento.pctPreventivo !== null && kpis.mantenimiento.pctCorrectivo !== null
+                            ? `${Math.round(kpis.mantenimiento.pctPreventivo)}% / ${Math.round(kpis.mantenimiento.pctCorrectivo)}%`
+                            : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {kpis.mantenimiento.totalOrdenes} órdenes
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-blue-100 text-blue-600">
+                        <Activity className="h-6 w-6" />
+                      </div>
+                    </div>
+                  </ContentCard>
+
+                  <ContentCard className="border-l-4 border-l-purple-600">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Costo por km</p>
+                        <p className="text-3xl font-bold text-purple-600">
+                          {kpis.costos.costoPorKmGlobal !== null
+                            ? formatCOP(kpis.costos.costoPorKmGlobal)
+                            : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatKm(kpis.costos.kmTotalFlota)} totales
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-purple-100 text-purple-600">
+                        <DollarSign className="h-6 w-6" />
+                      </div>
+                    </div>
+                  </ContentCard>
+
+                  <ContentCard className="border-l-4 border-l-red-600">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Costo total de flota</p>
+                        <p className="text-2xl font-bold text-red-600">
+                          {formatCOP(kpis.costos.costoTotalFlota)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {kpis.flota.enMantenimiento} en mantenimiento
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-red-100 text-red-600">
+                        <Wallet className="h-6 w-6" />
+                      </div>
+                    </div>
+                  </ContentCard>
+                </div>
+
+                {/* Gráficos */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                  <ContentCard
+                    header={{ title: "Preventivo vs Correctivo", icon: <PieIcon className="h-4 w-4" /> }}
+                  >
+                    {kpiPieData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <PieChart>
+                          <Pie
+                            data={kpiPieData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={70}
+                            outerRadius={110}
+                            label={(e: any) => `${e.name}: ${e.value}`}
+                          >
+                            {kpiPieData.map((entry, idx) => (
+                              <Cell key={idx} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: 8, color: axisColor }} />
+                          <Legend wrapperStyle={{ color: axisColor }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+                        Sin datos para el periodo
+                      </div>
+                    )}
+                  </ContentCard>
+
+                  <ContentCard
+                    header={{ title: "Top 10 vehículos más costosos", icon: <BarChart3 className="h-4 w-4" /> }}
+                  >
+                    {kpiBarData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={kpiBarData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                          <XAxis dataKey="placa" angle={-25} textAnchor="end" interval={0} height={70} fontSize={11} stroke={axisColor} tick={{ fill: axisColor }} />
+                          <YAxis stroke={axisColor} tick={{ fill: axisColor }} tickFormatter={(v: number) => formatCOP(v)} width={90} />
+                          <Tooltip
+                            formatter={(value: any) => formatCOP(Number(value))}
+                            contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: 8, color: axisColor }}
+                          />
+                          <Legend wrapperStyle={{ color: axisColor }} />
+                          <Bar dataKey="costoMantenimiento" stackId="a" fill={COLOR_PRIMARY} name="Mantenimiento" />
+                          <Bar dataKey="costoCombustible" stackId="a" fill={COLOR_PURPLE} name="Combustible" radius={[6, 6, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+                        Sin datos para el periodo
+                      </div>
+                    )}
+                  </ContentCard>
+                </div>
+
+                {/* Ranking de vehículos más costosos */}
+                <ContentCard
+                  className="mt-6 mb-6"
+                  header={{ title: "Ranking de vehículos más costosos", icon: <Trophy className="h-4 w-4" /> }}
+                >
+                  {kpis.rankingVehiculos.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Placa</TableHead>
+                            <TableHead>Marca / Línea</TableHead>
+                            <TableHead>Estado</TableHead>
+                            <TableHead className="text-right">Órdenes (P/C)</TableHead>
+                            <TableHead className="text-right">Mantenimiento</TableHead>
+                            <TableHead className="text-right">Combustible</TableHead>
+                            <TableHead className="text-right">Costo total</TableHead>
+                            <TableHead className="text-right">Km recorridos</TableHead>
+                            <TableHead className="text-right">Costo/km</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {kpis.rankingVehiculos.map((v, i) => (
+                            <TableRow key={`${v.placa}-${i}`}>
+                              <TableCell className="font-medium">{v.placa}</TableCell>
+                              <TableCell>
+                                {[v.marca, v.linea].filter(Boolean).join(" / ") || "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{v.estado || "—"}</Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {v.ordenes}{" "}
+                                <span className="text-xs text-muted-foreground">
+                                  ({v.preventivos}/{v.correctivos})
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">{formatCOP(v.costoMantenimiento)}</TableCell>
+                              <TableCell className="text-right">{formatCOP(v.costoCombustible)}</TableCell>
+                              <TableCell className="text-right font-bold">{formatCOP(v.costoTotal)}</TableCell>
+                              <TableCell className="text-right">{formatKm(v.kmRecorridos)}</TableCell>
+                              <TableCell className="text-right">
+                                {v.costoPorKm !== null ? formatCOP(v.costoPorKm) : "—"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      Sin datos para el periodo
+                    </p>
+                  )}
+                </ContentCard>
+              </>
+            )}
+          </TabsContent>
+        </Tabs>
       </PageContainer>
     </DashboardLayout>
   );

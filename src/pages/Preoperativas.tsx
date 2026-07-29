@@ -9,6 +9,7 @@ import { ModuleHeader } from "@/components/layout/ModuleHeader";
 import { ContentCard } from "@/components/layout/ContentCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -88,11 +89,15 @@ interface PreoperacionalAPI {
   seccionDelantera: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionMedia: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionTrasera: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
+  seccionAseo?: Record<string, { estado: string; observaciones: string; fotoUrl: string }>;
   seccionConductor?: {
     horasSueno: number;
     estadoSalud: string;
+    estadoSaludObservaciones?: string;
     tomaMedicamentos: boolean;
+    medicamentosDetalle?: string;
     consumoSustancias: boolean;
+    sustanciasDetalle?: string;
     selfieUrl?: string;
   };
   novedades?: Array<{
@@ -948,11 +953,41 @@ function VehiculoView({
 // ════════════════════════════════════════
 
 function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null; onClose: () => void }) {
-  const { bearerToken } = useAuth();
+  const { bearerToken, apiRoles } = useAuth();
   const queryClient = useQueryClient();
   const [extenderNovedadId, setExtenderNovedadId] = useState<string | null>(null);
   const [extenderDias, setExtenderDias] = useState("15");
   const [extenderMotivo, setExtenderMotivo] = useState("");
+  const [showAprobar, setShowAprobar] = useState(false);
+  const [aprobarObs, setAprobarObs] = useState("");
+
+  // Solo ADMIN/CLIENTE_ADMIN pueden aprobar de todos modos (AUDITOR es solo lectura).
+  const puedeAprobar = (apiRoles ?? []).some((r) =>
+    ["ROLE_ADMIN", "ROLE_SUPER_ADMIN", "ROLE_CLIENTE_ADMIN"].includes(r),
+  );
+
+  const aprobarMutation = useMutation({
+    mutationFn: async (observaciones: string) => {
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales/${preop?._id}/aprobar-forzado`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearerToken}` },
+        body: JSON.stringify({ observaciones }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.message || "Error al aprobar la preoperacional");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Preoperacional aprobada");
+      setShowAprobar(false);
+      setAprobarObs("");
+      queryClient.invalidateQueries({ queryKey: ["preoperacionales-admin"] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const extenderMutation = useMutation({
     mutationFn: async ({ novedadId, diasExtra, motivo }: { novedadId: string; diasExtra: number; motivo: string }) => {
@@ -1135,6 +1170,46 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             <span>Fecha: <strong className="text-foreground">{formatDateTime(preop.createdAt)}</strong></span>
           </div>
 
+          {/* Aprobar de todos modos (resuelve novedades no corregibles: salud/sueño/sustancias) */}
+          {puedeAprobar && preop.estadoGeneral !== "APROBADO" && (
+            <div className="border rounded-lg p-3 bg-muted/20 space-y-2">
+              {!showAprobar ? (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    ¿La novedad ya fue atendida? Puede aprobar la preoperacional de todos modos (deja registro).
+                  </p>
+                  <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => setShowAprobar(true)}>
+                    <CheckCircle className="h-4 w-4" />
+                    Aprobar de todos modos
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Aprobar de todos modos</p>
+                  <Textarea
+                    value={aprobarObs}
+                    onChange={(e) => setAprobarObs(e.target.value)}
+                    placeholder="Motivo / observación de la aprobación (obligatorio, mín. 5 caracteres)"
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={aprobarMutation.isPending || aprobarObs.trim().length < 5}
+                      onClick={() => aprobarMutation.mutate(aprobarObs.trim())}
+                    >
+                      {aprobarMutation.isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+                      Confirmar aprobación
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowAprobar(false); setAprobarObs(""); }}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {preop.firmaConductorUrl && (
             <div className="border rounded-lg overflow-hidden">
               <p className="text-xs font-semibold text-muted-foreground px-3 pt-2 pb-1">Firma del Conductor</p>
@@ -1155,14 +1230,16 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             </div>
           )}
 
-          {/* Sección Conductor */}
+          {/* Salud del Conductor */}
           {preop.seccionConductor && (
-            <div className="bg-muted/30 rounded-lg p-4 space-y-2">
-              <h4 className="text-sm font-semibold">Sección Conductor</h4>
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3">
+              <h4 className="text-sm font-semibold">Salud del Conductor</h4>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Horas de Sueño</p>
-                  <p className="font-medium">{preop.seccionConductor.horasSueno}h</p>
+                  <p className={`font-medium ${(preop.seccionConductor.horasSueno ?? 8) < 8 ? "text-destructive" : ""}`}>
+                    {preop.seccionConductor.horasSueno}h
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Estado de Salud</p>
@@ -1176,11 +1253,39 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Sustancias</p>
-                  <p className="font-medium">{preop.seccionConductor.consumoSustancias ? "Sí" : "No"}</p>
+                  <p className={`font-medium ${preop.seccionConductor.consumoSustancias ? "text-destructive" : ""}`}>
+                    {preop.seccionConductor.consumoSustancias ? "Sí" : "No"}
+                  </p>
                 </div>
               </div>
+
+              {/* Detalles / observaciones de salud */}
+              {preop.seccionConductor.estadoSaludObservaciones && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Observaciones de salud</p>
+                  <p className="text-sm">{preop.seccionConductor.estadoSaludObservaciones}</p>
+                </div>
+              )}
+              {preop.seccionConductor.tomaMedicamentos && preop.seccionConductor.medicamentosDetalle && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Detalle de medicamentos</p>
+                  <p className="text-sm">{preop.seccionConductor.medicamentosDetalle}</p>
+                </div>
+              )}
+              {preop.seccionConductor.consumoSustancias && preop.seccionConductor.sustanciasDetalle && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Detalle de sustancias</p>
+                  <p className="text-sm">{preop.seccionConductor.sustanciasDetalle}</p>
+                </div>
+              )}
+
               {preop.seccionConductor.selfieUrl && (
-                <img src={preop.seccionConductor.selfieUrl} alt="Selfie conductor" className="h-20 w-20 rounded-lg object-cover" />
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Selfie del conductor</p>
+                  <a href={preop.seccionConductor.selfieUrl} target="_blank" rel="noreferrer">
+                    <img src={preop.seccionConductor.selfieUrl} alt="Selfie conductor" className="h-24 w-24 rounded-lg object-cover border" />
+                  </a>
+                </div>
               )}
             </div>
           )}
@@ -1190,6 +1295,7 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
             {renderSection(preop.seccionDelantera, "Sección Delantera")}
             {renderSection(preop.seccionMedia, "Sección Media")}
             {renderSection(preop.seccionTrasera, "Sección Trasera")}
+            {renderSection(preop.seccionAseo, "Sección Aseo")}
           </div>
 
           {/* Novedades */}

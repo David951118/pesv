@@ -14,6 +14,8 @@ import {
   FileText,
   Handshake,
   Building2,
+  Route,
+  Fuel,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -29,7 +31,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-type EntityType = "empresas" | "terceros" | "vehiculos" | "documentos" | "contratos";
+type EntityType =
+  | "empresas"
+  | "terceros"
+  | "vehiculos"
+  | "documentos"
+  | "contratos"
+  | "rutas"
+  | "combustible";
 
 interface DeletedItem {
   _id: string;
@@ -44,6 +53,13 @@ const ENTITY_CONFIG: Record<EntityType, { label: string; icon: typeof Users; end
   vehiculos: { label: "Vehículos", icon: Car, endpoint: "/api/vehiculos" },
   documentos: { label: "Documentos", icon: FileText, endpoint: "/api/documentos" },
   contratos: { label: "Contratos", icon: Handshake, endpoint: "/api/contratos" },
+  rutas: { label: "Rutas", icon: Route, endpoint: "/api/rutas", skipEmpresaFilter: true },
+  combustible: {
+    label: "Tanqueos",
+    icon: Fuel,
+    endpoint: "/api/operacion/combustible",
+    skipEmpresaFilter: true,
+  },
 };
 
 function normalizeItems(entity: EntityType, data: unknown[]): DeletedItem[] {
@@ -72,6 +88,23 @@ function normalizeItems(entity: EntityType, data: unknown[]): DeletedItem[] {
         displayName = (item.numero as string) || (item.consecutivo as string) || String(item._id);
         displayDetail = (item.estado as string) || "";
         break;
+      case "rutas":
+        displayName =
+          (item.nombre as string) ||
+          [item.origen, item.destino].filter(Boolean).join(" → ") ||
+          String(item._id);
+        displayDetail = (item.recorrido as string) || "";
+        break;
+      case "combustible": {
+        const veh = item.vehiculo as { placa?: string } | null;
+        displayName = (item.placa as string) || veh?.placa || String(item._id);
+        const galones = item.galones != null ? `${item.galones} gal` : "";
+        const fecha = item.fecha
+          ? new Date(item.fecha as string).toLocaleDateString("es-CO")
+          : "";
+        displayDetail = [galones, fecha].filter(Boolean).join(" · ");
+        break;
+      }
     }
 
     return {

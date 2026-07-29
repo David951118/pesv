@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ClipboardCheck, FileText, LogOut, User, UserCircle, FolderOpen, ShieldAlert, AlertTriangle, XCircle, CheckCircle, X, FileWarning } from "lucide-react";
+import { ClipboardCheck, FileText, LogOut, User, UserCircle, FolderOpen, ShieldAlert, AlertTriangle, XCircle, CheckCircle, X, FileWarning, Fuel, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
@@ -14,6 +14,8 @@ interface ConductorLayoutProps {
 
 const navItems = [
   { title: "Preoperativas", href: "/conductor/preoperativas", icon: ClipboardCheck },
+  { title: "Combustible", href: "/conductor/combustible", icon: Fuel },
+  { title: "Mantenim.", href: "/conductor/mantenimiento", icon: Wrench },
   { title: "Documentos", href: "/conductor/documentos", icon: FolderOpen },
   { title: "FUEC", href: "/conductor/fuec", icon: FileText },
   { title: "Perfil", href: "/conductor/configuracion", icon: UserCircle },

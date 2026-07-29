@@ -3,6 +3,7 @@ import logoCoopsetrans from "./logos/logo-coopsetrans.png";
 import logoExpresuratur from "./logos/logo-expresuratur.png";
 import logoRedondo from "./logos/logo-redondo.png";
 import logoSandona from "./logos/sandona.jpg";
+import logoIlc from "./logos/logo-ilc.jpeg";
 
 export interface LogoOption {
   key: string;
@@ -20,6 +21,7 @@ export const LOGO_OPTIONS: LogoOption[] = [
   { key: "expresuratur", label: "Expresuratur", src: logoExpresuratur },
   { key: "redondo", label: "Logo Redondo", src: logoRedondo },
   { key: "sandona", label: "Sandoná", src: logoSandona },
+  { key: "ilc", label: "ILC", src: logoIlc },
 ];
 
 /** Get logo src by key, falls back to Asegurar */

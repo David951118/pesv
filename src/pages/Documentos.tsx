@@ -201,9 +201,11 @@ export default function Documentos() {
     if (!historialData) return [];
     const map = new Map<string, { entidad: string; tipo: string; docs: ApiRndcDocumento[] }>();
     for (const doc of historialData) {
-      const entidadId = typeof doc.entidad === "object" ? (doc.entidad as any)?._id : doc.entidad;
-      const entidadNombre = typeof doc.entidad === "object"
-        ? (doc.entidad as any)?.placa || (doc.entidad as any)?.nombres || (doc.entidad as any)?.razonSocial || entidadId
+      // El backend puebla `entidadId` (objeto con placa/nombres/razonSocial) o lo deja como string
+      const entidadRaw = doc.entidadId as unknown;
+      const entidadId = typeof entidadRaw === "object" && entidadRaw !== null ? (entidadRaw as any)._id : (entidadRaw as string);
+      const entidadNombre = typeof entidadRaw === "object" && entidadRaw !== null
+        ? (entidadRaw as any).placa || (entidadRaw as any).nombres || (entidadRaw as any).razonSocial || entidadId
         : entidadId;
       const key = `${entidadId}-${doc.tipoDocumento}`;
       if (!map.has(key)) {

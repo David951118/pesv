@@ -43,6 +43,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     // Redirect based on role
     if (role === "conductor") {
       return <Navigate to="/conductor/preoperativas" replace />;
+    } else if (role === "mecanico") {
+      return <Navigate to="/mantenimiento" replace />;
     } else {
       return <Navigate to="/" replace />;
     }

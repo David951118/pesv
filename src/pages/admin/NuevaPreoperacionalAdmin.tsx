@@ -46,9 +46,12 @@ import {
   ShieldAlert,
   XCircle,
   Camera,
+  Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { getVehiculoKilometraje } from "@/services/apirndc/apirndc.api";
+import { KM_FUENTE_LABELS } from "@/components/operacion/operacion.helpers";
 import {
   SECCION_DELANTERA_ITEMS,
   SECCION_MEDIA_ITEMS,
@@ -94,6 +97,7 @@ export default function NuevaPreoperacionalAdmin() {
   const [vehPopoverOpen, setVehPopoverOpen] = useState(false);
   const [condPopoverOpen, setCondPopoverOpen] = useState(false);
   const [kilometraje, setKilometraje] = useState("");
+  const [loadingKm, setLoadingKm] = useState(false);
   const [horasSueno, setHorasSueno] = useState("");
   const [estadoSalud, setEstadoSalud] = useState<"" | "BUENO" | "REGULAR" | "MALO">("");
   const [estadoSaludObs, setEstadoSaludObs] = useState("");
@@ -154,6 +158,30 @@ export default function NuevaPreoperacionalAdmin() {
 
   const selectedVehiculo = vehiculos.find((v) => v._id === vehiculoId);
   const selectedConductor = conductores.find((c) => c._id === conductorIdSel);
+
+  // ── Traer kilometraje actual desde Cellvi GPS ──
+  const handleConsultarKm = async () => {
+    if (!vehiculoId) {
+      toast.info("Seleccione primero un vehículo");
+      return;
+    }
+    setLoadingKm(true);
+    try {
+      const res = await getVehiculoKilometraje(vehiculoId);
+      if (res.data?.kilometraje !== null && res.data?.kilometraje !== undefined) {
+        setKilometraje(String(res.data.kilometraje));
+        toast.info(
+          `Km actual: ${res.data.kilometraje.toLocaleString("es-CO")} (${KM_FUENTE_LABELS[res.data.fuente] ?? res.data.fuente})`
+        );
+      } else {
+        toast.info("Sin kilometraje disponible para este vehículo");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al consultar el kilometraje");
+    } finally {
+      setLoadingKm(false);
+    }
+  };
 
   const updateItem = (key: string, patch: Partial<ItemState>) => {
     setItems((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -502,13 +530,26 @@ export default function NuevaPreoperacionalAdmin() {
 
               <div className="space-y-2">
                 <Label>Kilometraje *</Label>
-                <Input
-                  type="number"
-                  value={kilometraje}
-                  onChange={(e) => setKilometraje(e.target.value)}
-                  placeholder="Ej: 45000"
-                  min={1}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={kilometraje}
+                    onChange={(e) => setKilometraje(e.target.value)}
+                    placeholder="Ej: 45000"
+                    min={1}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    title="Traer kilometraje desde Cellvi GPS"
+                    disabled={loadingKm}
+                    onClick={handleConsultarKm}
+                  >
+                    {loadingKm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gauge className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
             </div>
           </ContentCard>

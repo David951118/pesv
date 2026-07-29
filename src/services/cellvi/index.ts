@@ -8,5 +8,4 @@ export type {
 } from './cellvi.types';
 
 export { isCellviConfigured } from './cellvi.auth';
-export { getVehiclesByUser, getLastPosition, getAllPositions } from './cellvi.api';
 export { parseCellviVariables, normalizeLastPosition } from './cellvi.normalize';

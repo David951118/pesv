@@ -532,8 +532,8 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
                 )}
 
                 {/* Archivo reverso */}
-                {(selectedDoc as Record<string, unknown>).archivoReverso && (() => {
-                  const rev = (selectedDoc as Record<string, unknown>).archivoReverso as { url: string; mimeType: string; nombreOriginal?: string; pesoBytes?: number };
+                {selectedDoc.archivoReverso?.url && (() => {
+                  const rev = selectedDoc.archivoReverso as { url: string; mimeType: string; nombreOriginal?: string; pesoBytes?: number };
                   return (
                     <div className="pt-3">
                       <p className="text-muted-foreground mb-2">Reverso</p>
