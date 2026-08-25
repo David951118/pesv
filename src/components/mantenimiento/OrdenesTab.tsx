@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   Ban,
   Eye,
   Loader2,
@@ -463,6 +464,13 @@ function EliminarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null;
             solo quiere dejarla sin efecto conservándola a la vista, use Anular.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
+          <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+          <p className="text-sm text-destructive">
+            <span className="font-semibold">Esta acción no tiene reversión.</span>{" "}
+            La orden no se puede recuperar desde la plataforma.
+          </p>
+        </div>
         <div className="space-y-2">
           <Label>Motivo (opcional)</Label>
           <Textarea
@@ -476,7 +484,7 @@ function EliminarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null;
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button variant="destructive" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
             {mutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Eliminar Orden
+            Eliminar definitivamente
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -488,11 +496,14 @@ function EliminarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null;
 
 export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   const queryClient = useQueryClient();
-  const { role } = useAuth();
+  const { role, apiRoles } = useAuth();
   // Asignar/anular son de gestión (backend las restringe a admin/cliente_admin)
   const esGestor = role !== "mecanico";
-  // Borrar es exclusivo del ADMIN de la plataforma; el cliente admin solo anula
-  const esAdminPlataforma = role === "admin";
+  // Borrar: admin de la plataforma y admin del cliente. Se mira el rol de la API
+  // porque el AUDITOR comparte el rol "supervisor" y es de solo lectura.
+  const puedeEliminar = (apiRoles ?? []).some((r) =>
+    ["ROLE_ADMIN", "ROLE_SUPER_ADMIN", "ROLE_CLIENTE_ADMIN"].includes(r),
+  );
   const [estadoFilter, setEstadoFilter] = useState("all");
   const [tipoFilter, setTipoFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -693,7 +704,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                                   Cerrar
                                 </DropdownMenuItem>
                               )}
-                              {(puedeAnular || esAdminPlataforma) && <DropdownMenuSeparator />}
+                              {(puedeAnular || puedeEliminar) && <DropdownMenuSeparator />}
                               {puedeAnular && (
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"
@@ -703,7 +714,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                                   Anular
                                 </DropdownMenuItem>
                               )}
-                              {esAdminPlataforma && (
+                              {puedeEliminar && (
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"
                                   onClick={() => setEliminarOrden(orden)}
