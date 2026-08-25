@@ -415,6 +415,8 @@ export interface ApiRndcAlertaMantenimiento {
   proximoKm?: number | null;
   kmRestantes?: number | null;
   diasRestantes?: number | null;
+  /** Ciclos del intervalo que ya se pasaron sin hacer el mantenimiento. */
+  ciclosVencidos?: number;
   sinHistorial?: boolean;
   estimado?: boolean;
   unaVez?: boolean;

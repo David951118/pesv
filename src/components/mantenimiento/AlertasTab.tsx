@@ -198,7 +198,15 @@ export function AlertasTab({ onCrearOt }: AlertasTabProps) {
                       <TableCell>{formatKm(alerta.kmActual)}</TableCell>
                       <TableCell>
                         {alerta.proximoKm !== null && alerta.proximoKm !== undefined ? (
-                          <span className="font-medium">{formatKm(alerta.proximoKm)}</span>
+                          <div>
+                            <span className="font-medium">{formatKm(alerta.proximoKm)}</span>
+                            {(alerta.ciclosVencidos ?? 0) > 0 && (
+                              <span className="block text-xs text-destructive">
+                                {alerta.ciclosVencidos} servicio
+                                {alerta.ciclosVencidos === 1 ? "" : "s"} sin hacer
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-sm text-muted-foreground">
                             {alerta.kmActual == null
