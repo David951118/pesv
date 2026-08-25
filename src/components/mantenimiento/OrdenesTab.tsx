@@ -504,13 +504,25 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   const [anularOrden, setAnularOrden] = useState<ApiRndcOrdenTrabajo | null>(null);
   const [eliminarOrden, setEliminarOrden] = useState<ApiRndcOrdenTrabajo | null>(null);
 
+  // La búsqueda se resuelve en el backend (número de OT, placa, descripción,
+  // taller o actividad) para que alcance todas las páginas, no solo la actual.
+  const [searchAplicado, setSearchAplicado] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchAplicado(search.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["mant-ordenes", estadoFilter, tipoFilter, page],
+    queryKey: ["mant-ordenes", estadoFilter, tipoFilter, searchAplicado, page],
     queryFn: ({ signal }) =>
       getOrdenesTrabajo(
         {
           estado: estadoFilter !== "all" ? estadoFilter : undefined,
           tipo: tipoFilter !== "all" ? tipoFilter : undefined,
+          search: searchAplicado || undefined,
           page,
           limit: ITEMS_PER_PAGE,
         },
@@ -520,11 +532,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
 
   const ordenes = data?.data ?? [];
   const totalPages = data?.pages ?? 1;
-
-  // Búsqueda por placa: se filtra sobre la página actual
-  const filteredOrdenes = search
-    ? ordenes.filter((o) => (o.vehiculo?.placa || o.placa || "").toLowerCase().includes(search.toLowerCase()))
-    : ordenes;
+  const filteredOrdenes = ordenes;
 
   const iniciarMutation = useMutation({
     mutationFn: (id: string) => iniciarOrdenTrabajo(id),
@@ -542,7 +550,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por placa..."
+            placeholder="Buscar por N° de OT, placa, descripción o taller..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"

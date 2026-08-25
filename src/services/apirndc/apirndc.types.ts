@@ -411,10 +411,14 @@ export interface ApiRndcAlertaMantenimiento {
   intervaloDias?: number;
   ultimoServicio: { fecha?: string; kilometraje?: number; ot?: string } | null;
   kmActual?: number | null;
+  /** Kilometraje al que toca el proximo servicio (base + intervalo). */
+  proximoKm?: number | null;
   kmRestantes?: number | null;
   diasRestantes?: number | null;
   sinHistorial?: boolean;
   estimado?: boolean;
+  unaVez?: boolean;
+  kmObjetivo?: number | null;
   estado: ApiRndcAlertaEstado;
 }
 

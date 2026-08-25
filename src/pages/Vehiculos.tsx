@@ -1135,10 +1135,18 @@ export default function Vehiculos() {
                   <Label>Kilometraje Actual</Label>
                   <Input
                     type="number"
+                    min={0}
+                    max={2000000}
                     value={vehiculoForm.kilometrajeActual}
                     onChange={(e) => setVehiculoForm({ ...vehiculoForm, kilometrajeActual: e.target.value })}
                     placeholder="0"
                   />
+                  {Number(vehiculoForm.kilometrajeActual) > 2000000 && (
+                    <p className="text-xs text-destructive">
+                      Ese kilometraje no parece real. De este dato salen las alertas
+                      de mantenimiento, revíselo antes de guardar.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

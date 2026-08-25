@@ -348,7 +348,7 @@ export async function deletePlanMantenimiento(id: string, signal?: AbortSignal) 
 // ─── Mantenimiento: Órdenes de Trabajo ───
 
 export async function getOrdenesTrabajo(
-  params?: { estado?: string; tipo?: string; vehiculo?: string; page?: number; limit?: number },
+  params?: { estado?: string; tipo?: string; vehiculo?: string; search?: string; page?: number; limit?: number },
   signal?: AbortSignal,
 ) {
   return apirndcProxyCall<{ success: boolean; data: ApiRndcOrdenTrabajo[]; total: number; page: number; pages: number }>(

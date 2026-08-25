@@ -152,6 +152,7 @@ export function AlertasTab({ onCrearOt }: AlertasTabProps) {
                   <TableHead>Plan</TableHead>
                   <TableHead>Último servicio</TableHead>
                   <TableHead>Km actual</TableHead>
+                  <TableHead>Próximo servicio</TableHead>
                   <TableHead>Restante</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="text-center">Acción</TableHead>
@@ -160,7 +161,7 @@ export function AlertasTab({ onCrearOt }: AlertasTabProps) {
               <TableBody>
                 {alertas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No hay alertas de mantenimiento
                     </TableCell>
                   </TableRow>
@@ -195,6 +196,17 @@ export function AlertasTab({ onCrearOt }: AlertasTabProps) {
                         )}
                       </TableCell>
                       <TableCell>{formatKm(alerta.kmActual)}</TableCell>
+                      <TableCell>
+                        {alerta.proximoKm !== null && alerta.proximoKm !== undefined ? (
+                          <span className="font-medium">{formatKm(alerta.proximoKm)}</span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            {alerta.kmActual == null
+                              ? "Falta el kilometraje del vehículo"
+                              : "-"}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {getRestanteText(alerta)}
                         {alerta.estimado && (

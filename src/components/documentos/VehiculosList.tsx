@@ -517,7 +517,7 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
               </div>
               <div className="space-y-2">
                 <Label>Kilometraje Actual</Label>
-                <Input type="number" value={vehiculoForm.kilometrajeActual} onChange={(e) => setVehiculoForm({ ...vehiculoForm, kilometrajeActual: e.target.value })} placeholder="0" />
+                <Input type="number" min={0} max={2000000} value={vehiculoForm.kilometrajeActual} onChange={(e) => setVehiculoForm({ ...vehiculoForm, kilometrajeActual: e.target.value })} placeholder="0" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
