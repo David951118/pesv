@@ -77,7 +77,7 @@ const App = () => (
             <Route
               path="/preoperativas"
               element={
-                <ProtectedRoute allowedRoles={["supervisor"]}>
+                <ProtectedRoute allowedRoles={["supervisor", "mecanico"]}>
                   <Preoperativas />
                 </ProtectedRoute>
               }

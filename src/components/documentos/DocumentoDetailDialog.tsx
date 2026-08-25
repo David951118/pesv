@@ -36,6 +36,14 @@ function isImageMime(mime?: string) {
   return mime?.startsWith("image/");
 }
 
+function getPropietarioLabel(documento: ApiRndcDocumento): string | null {
+  const eid = documento.entidadId as unknown;
+  if (typeof eid !== "object" || eid === null) return null;
+  const e = eid as Record<string, string>;
+  const nombreCompleto = [e.nombres, e.apellidos].filter(Boolean).join(" ");
+  return e.placa || nombreCompleto || e.razonSocial || null;
+}
+
 interface DocumentoDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,7 +53,7 @@ interface DocumentoDetailDialogProps {
 export function DocumentoDetailDialog({ open, onOpenChange, documento }: DocumentoDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl w-[95vw]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-2xl w-[95vw]">
         {documento ? (
           <>
             <DialogHeader>
@@ -57,11 +65,11 @@ export function DocumentoDetailDialog({ open, onOpenChange, documento }: Documen
               </DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-3">
+            <div className="space-y-3 min-w-0 max-w-full">
               {[
                 { label: "Tipo Documento", value: documento.tipoDocumento?.replace(/_/g, " ") },
-                { label: "Entidad", value: documento.entidadModelo },
-                { label: "ID Entidad", value: typeof documento.entidadId === "object" ? (documento.entidadId as Record<string, string>)._id : documento.entidadId },
+                { label: "Tipo de Propietario", value: documento.entidadModelo === "Tercero" ? "Conductor" : documento.entidadModelo },
+                { label: "Propietario", value: getPropietarioLabel(documento) },
                 { label: "Numero", value: documento.numero || "-" },
                 { label: "Entidad Emisora", value: documento.entidadEmisora || "-" },
                 { label: "Fecha Expedicion", value: formatDate(documento.fechaExpedicion) },
@@ -70,7 +78,7 @@ export function DocumentoDetailDialog({ open, onOpenChange, documento }: Documen
                 { label: "Subido Por", value: documento.subidoPor || "-" },
                 { label: "Creado", value: formatDate(documento.createdAt) },
                 { label: "Actualizado", value: formatDate(documento.updatedAt) },
-              ].map((f) => (
+              ].filter((f) => f.value !== null).map((f) => (
                 <div key={f.label} className="flex justify-between items-start py-2 border-b border-border last:border-0">
                   <span className="text-sm text-muted-foreground">{f.label}</span>
                   <span className="text-sm font-medium text-foreground text-right max-w-[60%]">{f.value}</span>
@@ -96,7 +104,7 @@ export function DocumentoDetailDialog({ open, onOpenChange, documento }: Documen
                       <object
                         data={documento.archivo.url}
                         type="application/pdf"
-                        className="w-full h-[400px]"
+                        className="w-full max-w-full h-[400px]"
                       >
                         <p className="p-4 text-sm text-muted-foreground">
                           No se puede mostrar el PDF.{" "}
@@ -144,7 +152,7 @@ export function DocumentoDetailDialog({ open, onOpenChange, documento }: Documen
                     )}
                     {rev.mimeType === "application/pdf" && (
                       <div className="mb-3 rounded-lg overflow-hidden border">
-                        <object data={rev.url} type="application/pdf" className="w-full h-[400px]">
+                        <object data={rev.url} type="application/pdf" className="w-full max-w-full h-[400px]">
                           <p className="p-4 text-sm text-muted-foreground">
                             No se puede mostrar el PDF.{" "}
                             <a href={rev.url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Descargar</a>

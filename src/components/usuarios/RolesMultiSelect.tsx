@@ -51,10 +51,9 @@ export const ACCESS_ROLES: RoleOption[] = [
   },
 ];
 
-// TEMPORAL: ocultar los roles de "Acceso al sistema" (Mecánico/Auditor) en la UI
-// de creación/edición de usuarios (no se usan por ahora). Para restaurarlos, poner
-// esta constante en true (no se borró nada de la lógica ni de los datos existentes).
-export const SHOW_ACCESS_ROLES = false;
+// Roles de "Acceso al sistema" (Mecánico/Auditor) visibles en la UI de
+// creación/edición de usuarios. Poner en false para ocultarlos sin borrar lógica.
+export const SHOW_ACCESS_ROLES = true;
 
 const ALL_OPTIONS: RoleOption[] = [...BUSINESS_ROLES, ...ACCESS_ROLES];
 
@@ -97,6 +96,8 @@ export function RolesMultiSelect({ value, onChange, className }: Props) {
         ...opt.tokens.filter((t) => !selected.includes(t)),
       ]);
     }
+    // Cerrar el desplegable tras elegir; para marcar otro rol se vuelve a abrir
+    setOpen(false);
   };
 
   const checkedOptions = ALL_OPTIONS.filter(isChecked);

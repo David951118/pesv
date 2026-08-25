@@ -62,6 +62,12 @@ export async function getVehiculoById(id: string, signal?: AbortSignal) {
   );
 }
 
+export async function createVehiculo(payload: Record<string, unknown>) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcVehiculo }>(
+    'POST', '/vehiculos', payload,
+  );
+}
+
 // ─── Terceros (conductores, propietarios, clientes) ───
 
 export async function getTerceros(

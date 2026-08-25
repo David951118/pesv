@@ -71,6 +71,54 @@ export const ALL_PREOP_ITEMS = [
 
 export type PreopItemKey = (typeof ALL_PREOP_ITEMS)[number]["key"];
 
+// ── Etiquetas legibles ──────────────────────────────────────────────────────
+// La API guarda los items con la clave del schema ("aseoInterno",
+// "seccionAseo.aseoInterno"). Toda vista que muestre un item debe pasarlo por
+// labelForItem() para que el usuario lea "Aseo Interno" y no la clave.
+
+export const ITEM_LABELS: Record<string, string> = {
+  ...Object.fromEntries(ALL_PREOP_ITEMS.map((i) => [i.key, i.label])),
+  // Items del estado del conductor (no estan en el formulario de secciones)
+  sueno: "Estado de Sueno",
+  salud: "Estado de Salud",
+  sustancias: "Consumo de Sustancias",
+};
+
+export const SECCION_LABELS: Record<string, string> = {
+  seccionDelantera: "Seccion Delantera",
+  seccionMedia: "Seccion Media",
+  seccionTrasera: "Seccion Trasera",
+  seccionAseo: "Seccion Aseo",
+  estadoConductor: "Estado del Conductor",
+};
+
+/** "aseoInterno" -> "Aseo Interno". Fallback para claves no catalogadas. */
+export function separarCamelCase(clave: string): string {
+  return String(clave)
+    .replace(/([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])/g, "$1 $2")
+    .replace(/([A-ZÁÉÍÓÚÑ]+)([A-ZÁÉÍÓÚÑ][a-záéíóúñ])/g, "$1 $2")
+    .replace(/([a-zA-Z])(\d)/g, "$1 $2")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
+/**
+ * Nombre legible de un item de la preoperacional. Acepta la clave suelta
+ * ("aseoInterno") o con su seccion ("seccionAseo.aseoInterno").
+ */
+export function labelForItem(raw?: string | null): string {
+  if (!raw) return "";
+  const partes = String(raw).split(".");
+  const ultima = partes[partes.length - 1];
+  return ITEM_LABELS[ultima] || separarCamelCase(ultima);
+}
+
+/** Nombre legible de una seccion ("seccionAseo" -> "Seccion Aseo"). */
+export function labelForSeccion(raw?: string | null): string {
+  if (!raw) return "";
+  return SECCION_LABELS[raw] || separarCamelCase(raw);
+}
+
 // Items con popup informativo (kits): al hacer click se muestra el contenido
 // minimo requerido para que el conductor confirme antes de marcar el estado.
 export const KIT_PRIMEROS_AUXILIOS_ITEMS = [

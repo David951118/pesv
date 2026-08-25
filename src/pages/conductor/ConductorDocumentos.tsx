@@ -641,7 +641,7 @@ function ViewDocDialog({ doc, onClose }: { doc: Documento; onClose: () => void }
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto w-[95vw] sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden w-[95vw] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
@@ -694,7 +694,7 @@ function ViewDocDialog({ doc, onClose }: { doc: Documento; onClose: () => void }
                 <img src={doc.archivo.url} alt="Documento frente" className="w-full max-h-[300px] object-contain p-2" />
               )}
               {isPdf && (
-                <object data={doc.archivo.url} type="application/pdf" className="w-full h-[300px]">
+                <object data={doc.archivo.url} type="application/pdf" className="w-full max-w-full h-[300px]">
                   <p className="p-4 text-sm text-muted-foreground">
                     No se puede mostrar el PDF.{" "}
                     <a href={doc.archivo.url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Descargar</a>

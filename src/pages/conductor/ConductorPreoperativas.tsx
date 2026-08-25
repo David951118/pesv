@@ -63,6 +63,7 @@ import {
   SECCION_ASEO_ITEMS,
   KIT_PRIMEROS_AUXILIOS_ITEMS,
   KIT_CARRETERA_ITEMS,
+  labelForItem,
 } from "@/lib/preopItems";
 import { KitInfoDialog, type EstadoKit } from "@/components/preoperativas/KitInfoDialog";
 
@@ -74,15 +75,6 @@ const ALL_ITEMS = [
 ];
 
 const TOTAL_ITEMS = ALL_ITEMS.length;
-
-// ── Item label lookup (for novedades) ──
-const ITEM_LABELS: Record<string, string> = {};
-for (const item of SECCION_DELANTERA_ITEMS) ITEM_LABELS[`seccionDelantera.${item.key}`] = item.label;
-for (const item of SECCION_MEDIA_ITEMS) ITEM_LABELS[`seccionMedia.${item.key}`] = item.label;
-for (const item of SECCION_TRASERA_ITEMS) ITEM_LABELS[`seccionTrasera.${item.key}`] = item.label;
-for (const item of SECCION_ASEO_ITEMS) ITEM_LABELS[`seccionAseo.${item.key}`] = item.label;
-// Also map bare keys
-for (const item of ALL_ITEMS) ITEM_LABELS[item.key] = item.label;
 
 // ── Novedad types ──
 interface NovedadItem {
@@ -379,39 +371,44 @@ export default function ConductorPreoperativas() {
   }, [novedadesData]);
 
   // ── Resolve novedad handler ──
-  const handleResolveNovedad = async (preopId: string, novedadId: string, file: File) => {
-    if (!bearerToken) return;
+  // Acepta varias fotos: la primera resuelve la novedad y las siguientes se
+  // anexan como evidencias adicionales de la misma corrección.
+  const handleResolveNovedad = async (preopId: string, novedadId: string, files: File[]) => {
+    if (!bearerToken || !files.length) return;
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${bearerToken}`,
+    };
     setUploadingCorreccion(true);
     try {
-      // 1. Get presigned URL
-      const presRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${bearerToken}`,
-        },
-        body: JSON.stringify({
-          fileName: `correccion-${novedadId}-${Date.now()}.${file.name.split(".").pop()}`,
-          mimeType: file.type || "image/jpeg",
-        }),
-      });
-      if (!presRes.ok) throw new Error("Error al obtener URL de subida");
-      const presJson = await presRes.json();
-      const { uploadUrl, publicUrl } = presJson.data || presJson;
+      const subirAS3 = async (file: File, indice: number) => {
+        const presRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            fileName: `correccion-${novedadId}-${Date.now()}-${indice}.${file.name.split(".").pop()}`,
+            mimeType: file.type || "image/jpeg",
+          }),
+        });
+        if (!presRes.ok) throw new Error("Error al obtener URL de subida");
+        const presJson = await presRes.json();
+        const { uploadUrl, publicUrl } = presJson.data || presJson;
+        await uploadFileToS3(uploadUrl, file);
+        return publicUrl as string;
+      };
 
-      // 2. Upload to S3
-      await uploadFileToS3(uploadUrl, file);
+      const urls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        urls.push(await subirAS3(files[i], i));
+      }
 
-      // 3. Mark as resolved
+      // Primera foto → resuelve la novedad (queda EN_REVISION)
       const resolveRes = await fetch(
         `${getApiRndcBaseUrl()}/api/preoperacionales/${preopId}/novedades/${novedadId}/resolver`,
         {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${bearerToken}`,
-          },
-          body: JSON.stringify({ fotoCorreccion: publicUrl }),
+          headers,
+          body: JSON.stringify({ fotoCorreccion: urls[0] }),
         }
       );
       if (!resolveRes.ok) {
@@ -419,7 +416,19 @@ export default function ConductorPreoperativas() {
         throw new Error(errData?.message || "Error al resolver la novedad");
       }
 
-      toast.success("Novedad resuelta exitosamente");
+      // Fotos restantes → evidencias de la misma corrección
+      for (const url of urls.slice(1)) {
+        await fetch(
+          `${getApiRndcBaseUrl()}/api/preoperacionales/${preopId}/novedades/${novedadId}/evidencias`,
+          { method: "POST", headers, body: JSON.stringify({ fotoUrl: url }) }
+        );
+      }
+
+      toast.success(
+        urls.length > 1
+          ? `Novedad resuelta con ${urls.length} fotos`
+          : "Novedad resuelta exitosamente"
+      );
       queryClient.invalidateQueries({ queryKey: ["conductor-novedades"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al resolver la novedad");
@@ -1327,7 +1336,7 @@ export default function ConductorPreoperativas() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-sm">
-                                  {ITEM_LABELS[novedad.item] || novedad.item}
+                                  {labelForItem(novedad.item)}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-0.5">
                                   {novedad.descripcion}
@@ -1370,11 +1379,12 @@ export default function ConductorPreoperativas() {
                                 }}
                                 type="file"
                                 accept="image/*"
+                                multiple
                                 className="hidden"
                                 onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    await handleResolveNovedad(preop._id, novedad._id, file);
+                                  const files = Array.from(e.target.files || []);
+                                  if (files.length) {
+                                    await handleResolveNovedad(preop._id, novedad._id, files);
                                   }
                                   e.target.value = "";
                                 }}
@@ -1400,7 +1410,7 @@ export default function ConductorPreoperativas() {
                                 ) : (
                                   <>
                                     <Upload className="h-3.5 w-3.5" />
-                                    Subir foto de correccion
+                                    Subir fotos de correccion
                                   </>
                                 )}
                               </Button>
@@ -1670,7 +1680,7 @@ export default function ConductorPreoperativas() {
                                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                               )}
                               <div className="flex-1 min-w-0">
-                                <span className="font-medium">{ITEM_LABELS[key] || key}</span>
+                                <span className="font-medium">{labelForItem(key)}</span>
                                 {val.estado === "MALO" && val.observaciones && (
                                   <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{val.observaciones}</p>
                                 )}

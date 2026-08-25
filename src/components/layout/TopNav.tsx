@@ -69,7 +69,7 @@ const navItems: NavItem[] = [
   { title: "Inicio", href: "/", icon: Home, roles: ["admin", "supervisor"] },
 
   // Supervisor / operational
-  { title: "Preoperativas", href: "/preoperativas", icon: ClipboardCheck, roles: ["supervisor"] },
+  { title: "Preoperativas", href: "/preoperativas", icon: ClipboardCheck, roles: ["supervisor", "mecanico"] },
   { title: "FUEC", href: "/fuec", icon: FileText, roles: ["supervisor"] },
   { title: "Mapa", href: "/mapa", icon: Map, roles: ["supervisor"] },
 

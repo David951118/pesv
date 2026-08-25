@@ -1124,7 +1124,7 @@ export default function Vehiculos() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Número Interno</Label>
+                  <Label>Número Interno (opcional)</Label>
                   <Input
                     value={vehiculoForm.numeroInterno}
                     onChange={(e) => setVehiculoForm({ ...vehiculoForm, numeroInterno: e.target.value })}

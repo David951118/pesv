@@ -261,8 +261,9 @@ export default function NuevaPreoperacionalAdmin() {
         kilometraje: Number(kilometraje),
         firmadoCheck: true,
         observaciones: observaciones || undefined,
+        // El backend deriva creadoPor del token; creadoPorUserId no se envía
+        // (el userId de Cellvi no es ObjectId y el backend lo descarta)
         creadoPorAdmin: true,
-        creadoPorUserId: user?.userId,
         seccionConductor: {
           horasSueno: Number(horasSueno),
           estadoSalud: estadoSalud || "BUENO",

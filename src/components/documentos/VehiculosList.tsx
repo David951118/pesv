@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
+import { getVehiculos, getTercerosByEmpresa, createVehiculo } from "@/services/apirndc";
 import { useSessionState } from "@/hooks/useSessionState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -220,16 +220,11 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
   // Fetch vehiculos from API
   const { data: vehiculos, isLoading } = useQuery({
     queryKey: ["vehiculos-list"],
-    queryFn: async () => {
-      if (!bearerToken) throw new Error("No autenticado");
+    queryFn: async ({ signal }) => {
       // limit alto: la lista pagina/busca en cliente, así que traemos todos los vehículos
       // (el backend devuelve 50 por defecto y dejaría fuera los recién creados).
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos?limit=1000`, {
-        headers: { Authorization: `Bearer ${bearerToken}` },
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Error al cargar vehículos");
-      return (result.data ?? result) as VehiculoAPI[];
+      const result = await getVehiculos({ limit: 1000 }, signal);
+      return (result.data ?? []) as unknown as VehiculoAPI[];
     },
     enabled: !!bearerToken,
   });
@@ -237,14 +232,10 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
   // Fetch terceros for propietario select — filtered by empresa
   const { data: terceros } = useQuery({
     queryKey: ["terceros-list", empresaId],
-    queryFn: async () => {
-      if (!bearerToken || !empresaId) throw new Error("No autenticado");
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/terceros/empresa/${empresaId}`, {
-        headers: { Authorization: `Bearer ${bearerToken}` },
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Error al cargar terceros");
-      return (result.data ?? result) as TerceroOption[];
+    queryFn: async ({ signal }) => {
+      if (!empresaId) throw new Error("No se encontró empresa");
+      const result = await getTercerosByEmpresa(empresaId, signal);
+      return (result.data ?? []) as unknown as TerceroOption[];
     },
     enabled: !!bearerToken && !!empresaId,
   });
@@ -279,18 +270,10 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
         kilometrajeActual: Number(vehiculoForm.kilometrajeActual) || 0,
       };
 
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${bearerToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || result.message || "Error al crear vehículo");
-      return result;
+      // Vía el cliente con refresco automático de sesión: si el token venció
+      // (pestaña en segundo plano, móvil suspendido) reintenta con uno nuevo
+      // en vez de fallar con "Token no proporcionado".
+      return createVehiculo(body);
     },
     onSuccess: () => {
       toast.success("Vehículo creado exitosamente");
@@ -529,7 +512,7 @@ export function VehiculosList({ onSelectVehiculo, onBack }: VehiculosListProps) 
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Número Interno</Label>
+                <Label>Número Interno (opcional)</Label>
                 <Input value={vehiculoForm.numeroInterno} onChange={(e) => setVehiculoForm({ ...vehiculoForm, numeroInterno: e.target.value })} placeholder="Número interno" />
               </div>
               <div className="space-y-2">

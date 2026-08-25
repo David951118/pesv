@@ -73,6 +73,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { labelForItem } from "@/lib/preopItems";
 
 // ── Types ──
 
@@ -115,16 +116,6 @@ type ViewMode = "lista" | "vehiculo";
 
 // ── Helpers ──
 
-const ITEM_LABELS: Record<string, string> = {
-  luces: "Luces", direccionalesDelanteros: "Direccionales Delanteros", limpiabrisas: "Limpiabrisas",
-  espejosRetrovisores: "Espejos Retrovisores", liquidos: "Líquidos", llantaDelanteraDerecha: "Llanta Del. Derecha",
-  llantaDelanteraIzquierda: "Llanta Del. Izquierda", bocina: "Bocina", frenos: "Frenos", tablero: "Tablero",
-  timon: "Timón", cinturones: "Cinturones", pedales: "Pedales", frenoMano: "Freno de Mano", bateria: "Batería",
-  kitPrimerosAuxilios: "Kit Primeros Auxilios", reflectivos: "Reflectivos", stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
-  equipoCarretera: "Equipo de Carretera", llantaTraseraDerecha: "Llanta Tras. Derecha",
-  llantaTraseraIzquierda: "Llanta Tras. Izquierda", direccionalesTraseros: "Direccionales Traseros", placa: "Placa",
-  parabrisas: "Parabrisas", extintor: "Extintor", herramienta: "Herramienta",
-};
 
 function getPlaca(p: PreoperacionalAPI): string {
   return (typeof p.vehiculo === "object" ? p.vehiculo?.placa : p.vehiculo) || "—";
@@ -159,9 +150,11 @@ function countFallas(section?: Record<string, { estado: string }>): number {
 // ── Main Component ──
 
 export default function Preoperativas() {
-  const { bearerToken } = useAuth();
+  const { bearerToken, role } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // El mecánico consulta novedades pero no crea ni habilita preoperacionales
+  const puedeGestionar = role !== "mecanico";
   const [viewMode, setViewMode] = useState<ViewMode>("lista");
   const [searchTerm, setSearchTerm] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
@@ -507,24 +500,28 @@ export default function Preoperativas() {
                   <FileText className="h-4 w-4 text-red-600" />
                   Exportar PDF
                 </Button>
-                <div className="border-l mx-1" />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowHabilitarDialog(true)}
-                  className="gap-1.5"
-                >
-                  <Plus className="h-4 w-4 text-blue-600" />
-                  Preop Extra
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => navigate("/preoperativas/nueva")}
-                  className="gap-1.5"
-                >
-                  <Plus className="h-4 w-4" />
-                  Nueva Preoperacional
-                </Button>
+                {puedeGestionar && (
+                  <>
+                    <div className="border-l mx-1" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowHabilitarDialog(true)}
+                      className="gap-1.5"
+                    >
+                      <Plus className="h-4 w-4 text-blue-600" />
+                      Preop Extra
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => navigate("/preoperativas/nueva")}
+                      className="gap-1.5"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Nueva Preoperacional
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1052,7 +1049,7 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <span className="font-medium">{ITEM_LABELS[key] || key}</span>
+                <span className="font-medium">{labelForItem(key)}</span>
                 {(val.estado === "MALO" || val.estado === "REGULAR") && val.observaciones && (
                   <p className={`text-xs mt-0.5 ${val.estado === "MALO" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>{val.observaciones}</p>
                 )}
@@ -1073,10 +1070,10 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
                 <a key={key} href={val.fotoUrl} target="_blank" rel="noreferrer" className="block">
                   <img
                     src={val.fotoUrl}
-                    alt={`Evidencia ${ITEM_LABELS[key] || key}`}
+                    alt={`Evidencia ${labelForItem(key)}`}
                     className="h-28 w-40 object-cover rounded-lg border-2 border-red-200 dark:border-red-800 shadow-sm hover:scale-105 transition-transform"
                   />
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium text-center max-w-[10rem] truncate">{ITEM_LABELS[key] || key}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-medium text-center max-w-[10rem] truncate">{labelForItem(key)}</p>
                 </a>
               ))}
             </div>
@@ -1306,7 +1303,7 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
                 <div key={nov._id} className="bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800 rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium">{ITEM_LABELS[nov.item] || nov.item} — {nov.seccion}</p>
+                      <p className="text-sm font-medium">{labelForItem(nov.item)} — {nov.seccion}</p>
                       {nov.descripcion && <p className="text-xs text-muted-foreground">{nov.descripcion}</p>}
                     </div>
                     <Badge variant={nov.estado === "RESUELTA" ? "default" : "secondary"}>{nov.estado}</Badge>
@@ -1314,7 +1311,7 @@ function PreopDetailDialog({ preop, onClose }: { preop: PreoperacionalAPI | null
                   {nov.fechaLimite && (
                     <p className="text-xs text-muted-foreground">Fecha límite: {formatDateTime(nov.fechaLimite)}</p>
                   )}
-                  {nov.estado !== "RESUELTA" && (
+                  {nov.estado !== "RESUELTA" && puedeAprobar && (
                     <>
                       {extenderNovedadId === nov._id ? (
                         <div className="flex flex-col gap-2 bg-white dark:bg-gray-900 rounded-md p-3 border">

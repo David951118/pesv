@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { labelForItem } from "@/lib/preopItems";
 import {
   Select,
   SelectContent,
@@ -82,6 +83,15 @@ interface HistorialEntry {
   detalles?: string;
 }
 
+interface EvidenciaCorreccion {
+  _id?: string;
+  url?: string | null;
+  nota?: string | null;
+  fecha?: string;
+  autorNombre?: string | null;
+  rol?: string | null;
+}
+
 interface NovedadFull {
   _id: string;
   item: string;
@@ -91,6 +101,9 @@ interface NovedadFull {
   fechaLimite?: string;
   fotoFalla?: string;
   fotoCorreccion?: string;
+  // Fotos y notas anexadas a la corrección; se pueden seguir agregando
+  // aunque la novedad ya esté validada.
+  evidenciasCorreccion?: EvidenciaCorreccion[];
   historial?: HistorialEntry[];
 }
 
@@ -107,16 +120,6 @@ interface PreopSeguimientoProps {
 
 // ── Helpers ──
 
-const ITEM_LABELS: Record<string, string> = {
-  luces: "Luces", direccionalesDelanteros: "Direccionales Delanteros", limpiabrisas: "Limpiabrisas",
-  espejosRetrovisores: "Espejos Retrovisores", liquidos: "Líquidos", llantaDelanteraDerecha: "Llanta Del. Derecha",
-  llantaDelanteraIzquierda: "Llanta Del. Izquierda", bocina: "Bocina", frenos: "Frenos", tablero: "Tablero",
-  timon: "Timón", cinturones: "Cinturones", pedales: "Pedales", frenoMano: "Freno de Mano", bateria: "Batería",
-  kitPrimerosAuxilios: "Kit Primeros Auxilios", reflectivos: "Reflectivos", stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
-  equipoCarretera: "Equipo de Carretera", llantaTraseraDerecha: "Llanta Tras. Derecha",
-  llantaTraseraIzquierda: "Llanta Tras. Izquierda", direccionalesTraseros: "Direccionales Traseros", placa: "Placa",
-  parabrisas: "Parabrisas", extintor: "Extintor", herramienta: "Herramienta",
-};
 
 function fmt(date?: string) {
   if (!date) return "—";
@@ -197,6 +200,12 @@ function accionMeta(accion: string): { color: string; label: string; icon: JSX.E
         label: "Corrección enviada",
         icon: <Clock className="h-3 w-3 text-white" />,
       };
+    case "EVIDENCIA_AGREGADA":
+      return {
+        color: "bg-sky-500",
+        label: "Evidencia anexada",
+        icon: <Camera className="h-3 w-3 text-white" />,
+      };
     case "VALIDADA":
       return {
         color: "bg-green-500",
@@ -251,7 +260,13 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
   const [correccionNovedadId, setCorreccionNovedadId] = useState<string | null>(null);
   const [correccionObs, setCorreccionObs] = useState("");
   const [correccionFile, setCorreccionFile] = useState<File | null>(null);
+  // Evidencia adicional: varias fotos y una nota, incluso con la novedad ya validada
+  const [evidenciaNovedadId, setEvidenciaNovedadId] = useState<string | null>(null);
+  const [evidenciaNota, setEvidenciaNota] = useState("");
+  const [evidenciaFiles, setEvidenciaFiles] = useState<File[]>([]);
+  const [subiendoEvidenciaId, setSubiendoEvidenciaId] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const evidenciaInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const base = getApiRndcBaseUrl();
   const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${bearerToken}` };
@@ -552,6 +567,67 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * Anexa evidencia a la corrección de una novedad: varias fotos y/o una nota.
+   * Funciona en cualquier estado, incluida una corrección ya VALIDADA, para
+   * poder seguir documentando el arreglo después de aprobado.
+   */
+  const handleAgregarEvidencias = async (nid: string) => {
+    if (!bearerToken) return;
+    const nota = evidenciaNota.trim();
+    if (!evidenciaFiles.length && nota.length < 2) {
+      toast.error("Agregue al menos una foto o una nota");
+      return;
+    }
+    setSubiendoEvidenciaId(nid);
+    try {
+      const urls: string[] = [];
+      for (const file of evidenciaFiles) {
+        const presRes = await fetch(`${base}/api/documentos/presigned-url`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            fileName: `evidencia-${nid}-${Date.now()}-${urls.length}.${file.name.split(".").pop()}`,
+            mimeType: file.type || "image/jpeg",
+          }),
+        });
+        if (!presRes.ok) throw new Error("Error al obtener URL de subida");
+        const presJson = await presRes.json();
+        const { uploadUrl, publicUrl } = presJson.data || presJson;
+        await uploadFileToS3(uploadUrl, file);
+        urls.push(publicUrl);
+      }
+
+      // La nota acompaña a la primera evidencia; las demás van solo con foto.
+      const envios = urls.length
+        ? urls.map((url, i) => ({ fotoUrl: url, ...(i === 0 && nota ? { nota } : {}) }))
+        : [{ nota }];
+
+      for (const body of envios) {
+        const res = await fetch(
+          `${base}/api/preoperacionales/${preopId}/novedades/${nid}/evidencias`,
+          { method: "POST", headers: authHeaders, body: JSON.stringify(body) },
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err?.message || "Error al anexar la evidencia");
+        }
+      }
+
+      toast.success(
+        urls.length > 1 ? `${urls.length} fotos anexadas` : "Evidencia anexada",
+      );
+      setEvidenciaNovedadId(null);
+      setEvidenciaNota("");
+      setEvidenciaFiles([]);
+      refreshAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al anexar evidencia");
+    } finally {
+      setSubiendoEvidenciaId(null);
+    }
+  };
+
   const handleConfirmCorreccion = async (nid: string, item?: string) => {
     if (!bearerToken || !correccionFile) {
       toast.error("Seleccione una foto");
@@ -672,7 +748,7 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
                       <p className="text-sm font-medium">{meta.label}</p>
                       {it.item && (
                         <Badge variant="outline" className="text-xs">
-                          {ITEM_LABELS[it.item] || it.item}
+                          {labelForItem(it.item)}
                         </Badge>
                       )}
                     </div>
@@ -724,7 +800,7 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div>
                     <p className="text-sm font-medium">
-                      {ITEM_LABELS[nov.item] || nov.item}
+                      {labelForItem(nov.item)}
                       {nov.seccion ? <span className="text-muted-foreground"> — {nov.seccion}</span> : null}
                     </p>
                     {nov.descripcion && (
@@ -877,6 +953,158 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
                       >
                         <Upload className="h-3.5 w-3.5" />
                         Subir corrección
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Evidencias anexadas a la corrección (fotos + notas) */}
+                {(nov.evidenciasCorreccion?.length ?? 0) > 0 && (
+                  <div className="pt-2 border-t">
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">
+                      Evidencias de la corrección ({nov.evidenciasCorreccion!.length})
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {nov.evidenciasCorreccion!.map((ev, ei) => (
+                        <div key={ev._id || ei} className="max-w-[9rem]">
+                          {ev.url && (
+                            <a href={ev.url} target="_blank" rel="noreferrer">
+                              <img
+                                src={ev.url}
+                                alt={`Evidencia ${ei + 1}`}
+                                className="h-24 w-auto object-cover rounded-lg border-2 border-emerald-200"
+                              />
+                            </a>
+                          )}
+                          {ev.nota && (
+                            <p className="text-[11px] text-muted-foreground mt-0.5 break-words">
+                              {ev.nota}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-muted-foreground">
+                            {fmt(ev.fecha)}
+                            {ev.autorNombre ? ` · ${ev.autorNombre}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Anexar más evidencia — disponible siempre, incluso ya validada */}
+                {!esNovedadSuenoIncorregible(nov) && (
+                  <div className="pt-2 border-t">
+                    {evidenciaNovedadId === nov._id ? (
+                      <div className="space-y-2 bg-background border rounded-md p-3">
+                        <p className="text-xs font-semibold">
+                          Anexar evidencia
+                          {nov.estado === "VALIDADA" && (
+                            <span className="font-normal text-muted-foreground">
+                              {" "}
+                              — seguimiento posterior a la validación
+                            </span>
+                          )}
+                        </p>
+
+                        <div>
+                          <label className="text-xs text-muted-foreground block mb-1">
+                            Anotación <span className="text-[10px]">(opcional si adjunta fotos)</span>
+                          </label>
+                          <Textarea
+                            value={evidenciaNota}
+                            onChange={(e) => setEvidenciaNota(e.target.value)}
+                            placeholder="Observación sobre esta evidencia..."
+                            rows={2}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-muted-foreground block mb-1">
+                            Fotos <span className="text-[10px]">(puede seleccionar varias)</span>
+                          </label>
+                          <input
+                            ref={(el) => { evidenciaInputRefs.current[nov._id] = el; }}
+                            type="file"
+                            multiple
+                            accept="image/jpeg,image/png,image/webp"
+                            className="hidden"
+                            onClick={(e) => { (e.target as HTMLInputElement).value = ""; }}
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length) setEvidenciaFiles((prev) => [...prev, ...files]);
+                            }}
+                          />
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5"
+                              onClick={() => evidenciaInputRefs.current[nov._id]?.click()}
+                            >
+                              <Camera className="h-3.5 w-3.5" />
+                              Agregar fotos
+                            </Button>
+                            {evidenciaFiles.length > 0 && (
+                              <>
+                                <span className="text-xs text-muted-foreground">
+                                  {evidenciaFiles.length} {evidenciaFiles.length === 1 ? "foto" : "fotos"}
+                                </span>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => setEvidenciaFiles([])}
+                                >
+                                  Quitar
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            disabled={
+                              subiendoEvidenciaId === nov._id ||
+                              (!evidenciaFiles.length && evidenciaNota.trim().length < 2)
+                            }
+                            onClick={() => handleAgregarEvidencias(nov._id)}
+                          >
+                            {subiendoEvidenciaId === nov._id && (
+                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                            )}
+                            Anexar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEvidenciaNovedadId(null);
+                              setEvidenciaNota("");
+                              setEvidenciaFiles([]);
+                            }}
+                            disabled={subiendoEvidenciaId === nov._id}
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 gap-1 text-xs"
+                        onClick={() => {
+                          setEvidenciaNovedadId(nov._id);
+                          setEvidenciaNota("");
+                          setEvidenciaFiles([]);
+                        }}
+                      >
+                        <Camera className="h-3 w-3" />
+                        Anexar foto o anotación
                       </Button>
                     )}
                   </div>
@@ -1112,7 +1340,7 @@ export function PreopSeguimiento({ preopId, onUpdate }: PreopSeguimientoProps) {
                         <p className="text-sm mt-1 whitespace-pre-wrap break-words">{a.texto}</p>
                         {a.itemOrigen && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            Relacionado: {ITEM_LABELS[a.itemOrigen] || a.itemOrigen}
+                            Relacionado: {labelForItem(a.itemOrigen)}
                           </p>
                         )}
                         {/* Fotos adjuntas: antes/después para VALIDACION, o foto única para otras */}

@@ -6,6 +6,7 @@ import { Loader2, CheckCircle, XCircle, MinusCircle, Download, ShieldCheck, Aler
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { labelForItem } from "@/lib/preopItems";
 
 // ── Ordered section keys (alineadas con backend) ──
 const SECCION_DELANTERA = [
@@ -29,50 +30,6 @@ const SECCION_ASEO = [
   "aseoInterno","aseoExterno","latas","pintura",
 ];
 
-const ITEM_LABELS: Record<string, string> = {
-  // Delantera
-  luces: "Luces", direccionalesDelanteros: "Direccionales Delanteros",
-  limpiabrisas: "Limpiabrisas", parabrisas: "Parabrisas",
-  llantaDelanteraDerecha: "Llanta Delantera Derecha",
-  llantaDelanteraIzquierda: "Llanta Delantera Izquierda",
-  bocina: "Bocina", frenos: "Frenos",
-  nivelAceiteMotor: "Nivel de Aceite del Motor",
-  nivelLiquidoFrenos: "Nivel de Líquido de Frenos",
-  nivelAguaRadiador: "Nivel de Agua del Radiador",
-  estadoBateria: "Estado de la Batería",
-  fugasLiquidos: "Fugas de Líquidos",
-  // Media
-  tablero: "Tablero", timon: "Timón", pedales: "Pedales",
-  frenoMano: "Freno de Mano",
-  kitPrimerosAuxilios: "Kit Primeros Auxilios",
-  reflectivos: "Reflectivos",
-  aireAcondicionado: "Aire Acondicionado",
-  silleteria: "Sillería",
-  nivelCombustible: "Nivel de Combustible",
-  pito: "Pito",
-  cinturonesSeguridad: "Cinturones de Seguridad",
-  airbags: "Airbags",
-  vidrios: "Vidrios",
-  apoyacabezas: "Apoyacabezas",
-  espejoIzquierdo: "Espejo Izquierdo",
-  espejoDerecho: "Espejo Derecho",
-  espejoRetrovisor: "Espejo Retrovisor",
-  estadoDireccion: "Estado de la Dirección",
-  suspensionDelantera: "Suspensión Delantera",
-  suspensionTrasera: "Suspensión Trasera",
-  calcomanias: "Calcomanías",
-  puertas: "Puertas",
-  // Trasera
-  stop: "Stop", llantasRepuesto: "Llantas de Repuesto",
-  equipoCarretera: "Equipo de Carretera",
-  llantaTraseraDerecha: "Llanta Trasera Derecha",
-  llantaTraseraIzquierda: "Llanta Trasera Izquierda",
-  direccionalesTraseros: "Direccionales Traseros",
-  placa: "Placa", extintor: "Extintor", herramienta: "Herramienta",
-  // Aseo
-  aseoInterno: "Aseo Interno", aseoExterno: "Aseo Externo",
-  latas: "Latas", pintura: "Pintura",
-};
 
 // ── Types ──
 interface ItemData { estado: string; observaciones: string | null; fotoUrl: string | null }
@@ -181,7 +138,7 @@ function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[
             <div key={key} className={`flex items-start gap-3 px-5 py-2.5 ${isFalla ? "bg-red-50" : ""}`}>
               <div className="flex-1 min-w-0">
                 <span className={`text-sm font-medium ${isFalla ? "text-red-800" : "text-gray-700"}`}>
-                  {ITEM_LABELS[key] || key}
+                  {labelForItem(key)}
                 </span>
                 {isFalla && item.observaciones && (
                   <p className="text-xs text-red-600 mt-0.5">{item.observaciones}</p>
@@ -202,10 +159,10 @@ function InspeccionSeccion({ title, keys, data }: { title: string; keys: string[
               <div key={key}>
                 <img
                   src={data[key].fotoUrl!}
-                  alt={`Evidencia ${ITEM_LABELS[key] || key}`}
+                  alt={`Evidencia ${labelForItem(key)}`}
                   className="h-32 w-44 object-cover rounded-lg border-2 border-red-200 shadow-sm"
                 />
-                <p className="text-xs text-red-600 mt-1 font-medium text-center">{ITEM_LABELS[key] || key}</p>
+                <p className="text-xs text-red-600 mt-1 font-medium text-center">{labelForItem(key)}</p>
               </div>
             ))}
           </div>

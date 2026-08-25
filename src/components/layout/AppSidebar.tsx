@@ -79,7 +79,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Operación",
     items: [
-      { title: "Preoperativas", href: "/preoperativas", icon: ClipboardCheck, roles: ["supervisor"] },
+      { title: "Preoperativas", href: "/preoperativas", icon: ClipboardCheck, roles: ["supervisor", "mecanico"] },
       { title: "FUEC", href: "/fuec", icon: FileText, roles: ["supervisor"] },
       { title: "Mapa", href: "/mapa", icon: Map, roles: ["supervisor"] },
       { title: "Operación", href: "/operacion", icon: Truck, roles: ["admin", "supervisor"] },

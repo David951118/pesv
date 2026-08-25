@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { labelForItem } from "@/lib/preopItems";
 import {
   Select,
   SelectContent,
@@ -131,44 +132,6 @@ interface TerceroOption {
   rol?: string;
   tipo?: string;
   roles?: string[];
-}
-
-// ── Item labels ──
-const ITEM_LABELS: Record<string, string> = {
-  luces: "Luces",
-  direccionalesDelanteros: "Direccionales Delanteros",
-  limpiabrisas: "Limpiabrisas",
-  parabrisas: "Parabrisas",
-  espejosRetrovisores: "Espejos Retrovisores",
-  liquidos: "Líquidos",
-  llantaDelanteraDerecha: "Llanta Del. Derecha",
-  llantaDelanteraIzquierda: "Llanta Del. Izquierda",
-  bocina: "Bocina",
-  frenos: "Frenos",
-  tablero: "Tablero",
-  timon: "Timón",
-  cinturones: "Cinturones",
-  pedales: "Pedales",
-  frenoMano: "Freno de Mano",
-  bateria: "Batería",
-  kitPrimerosAuxilios: "Kit Primeros Auxilios",
-  reflectivos: "Reflectivos",
-  stop: "Stop",
-  llantasRepuesto: "Llantas de Repuesto",
-  equipoCarretera: "Equipo de Carretera",
-  llantaTraseraDerecha: "Llanta Tras. Derecha",
-  llantaTraseraIzquierda: "Llanta Tras. Izquierda",
-  direccionalesTraseros: "Direccionales Traseros",
-  placa: "Placa",
-  extintor: "Extintor",
-  herramienta: "Herramienta",
-};
-
-function labelForItem(raw: string): string {
-  if (!raw) return "";
-  const parts = raw.split(".");
-  const last = parts[parts.length - 1];
-  return ITEM_LABELS[last] || last;
 }
 
 // ── Colors ──

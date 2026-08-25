@@ -628,6 +628,9 @@ function PlanFormDialog({
 
 export function PlanesTab() {
   const queryClient = useQueryClient();
+  const { role } = useAuth();
+  // Los planes son política de la empresa: el mecánico solo consulta
+  const puedeGestionar = role !== "mecanico";
   const [formOpen, setFormOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<ApiRndcPlanMantenimiento | null>(null);
 
@@ -677,10 +680,12 @@ export function PlanesTab() {
             Defina intervalos de mantenimiento preventivo por vehículo, clase o toda la flota.
           </p>
         </div>
-        <Button onClick={handleNuevo}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Plan
-        </Button>
+        {puedeGestionar && (
+          <Button onClick={handleNuevo}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Plan
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -728,13 +733,14 @@ export function PlanesTab() {
                     <TableCell className="text-center">
                       <Switch
                         checked={plan.activo}
-                        disabled={toggleActivoMutation.isPending}
+                        disabled={!puedeGestionar || toggleActivoMutation.isPending}
                         onCheckedChange={(checked) =>
                           toggleActivoMutation.mutate({ id: plan._id, activo: checked })
                         }
                       />
                     </TableCell>
                     <TableCell>
+                      {puedeGestionar && (
                       <div className="flex items-center justify-center gap-1">
                         <Button
                           variant="ghost"
@@ -773,6 +779,7 @@ export function PlanesTab() {
                           </AlertDialogContent>
                         </AlertDialog>
                       </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

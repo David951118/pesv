@@ -61,14 +61,14 @@ function formatDate(date?: string) {
 function getEntidadLabel(doc: ApiRndcDocumento): string {
   const eid = doc.entidadId;
   if (!eid) return "-";
-  if (typeof eid === "string") return eid;
+  if (typeof eid === "string") return "-";
   // Populated object
   const obj = eid as Record<string, unknown>;
   if (obj.placa) return String(obj.placa);
   if (obj.razonSocial) return String(obj.razonSocial);
   if (obj.nombres) return `${obj.nombres} ${obj.apellidos ?? ""}`.trim();
   if (obj.identificacion) return String(obj.identificacion);
-  return obj._id ? String(obj._id) : "-";
+  return "-";
 }
 
 interface DocumentosTableProps {
@@ -124,7 +124,7 @@ export function DocumentosTable({
                   <div>
                     <p className="text-sm font-medium">{getEntidadLabel(doc)}</p>
                     <Badge variant="outline" className="text-xs mt-0.5">
-                      {doc.entidadModelo}
+                      {doc.entidadModelo === "Tercero" ? "Conductor" : doc.entidadModelo}
                     </Badge>
                   </div>
                 </TableCell>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -65,6 +66,9 @@ interface RepuestosTabProps {
 
 export function RepuestosTab({ onVerKardex }: RepuestosTabProps) {
   const queryClient = useQueryClient();
+  const { role } = useAuth();
+  // El mecánico gestiona el catálogo pero no elimina repuestos
+  const puedeEliminar = role !== "mecanico";
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState("");
   const [bajoStock, setBajoStock] = useState(false);
@@ -266,14 +270,18 @@ export function RepuestosTab({ onVerKardex }: RepuestosTabProps) {
                                 <Pencil className="h-4 w-4 mr-2" />
                                 Editar
                               </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => setDeleteTarget(rep)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Eliminar
-                              </DropdownMenuItem>
+                              {puedeEliminar && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onClick={() => setDeleteTarget(rep)}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Eliminar
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

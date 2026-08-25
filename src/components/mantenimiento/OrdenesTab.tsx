@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import {
   Ban,
@@ -433,6 +434,9 @@ function AnularDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null; o
 
 export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   const queryClient = useQueryClient();
+  const { role } = useAuth();
+  // Asignar/anular son de gestión (backend las restringe a admin/cliente_admin)
+  const esGestor = role !== "mecanico";
   const [estadoFilter, setEstadoFilter] = useState("all");
   const [tipoFilter, setTipoFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -562,10 +566,10 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                   </TableRow>
                 ) : (
                   filteredOrdenes.map((orden) => {
-                    const puedeAsignar = orden.estado === "ABIERTA" || orden.estado === "ASIGNADA";
+                    const puedeAsignar = esGestor && (orden.estado === "ABIERTA" || orden.estado === "ASIGNADA");
                     const puedeIniciar = orden.estado === "ABIERTA" || orden.estado === "ASIGNADA";
                     const puedeCerrar = ["ABIERTA", "ASIGNADA", "EN_PROCESO"].includes(orden.estado);
-                    const puedeAnular = orden.estado !== "CERRADA" && orden.estado !== "ANULADA";
+                    const puedeAnular = esGestor && orden.estado !== "CERRADA" && orden.estado !== "ANULADA";
                     return (
                       <TableRow key={orden._id}>
                         <TableCell className="font-medium">{orden.numero}</TableCell>

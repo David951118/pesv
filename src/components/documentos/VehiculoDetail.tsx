@@ -387,7 +387,7 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
 
       {/* Document Detail Dialog */}
       <Dialog open={!!selectedDoc} onOpenChange={(v) => !v && setSelectedDoc(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-2xl w-[95vw]">
           {selectedDoc && (
             <>
               <DialogHeader>
@@ -446,7 +446,7 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
                 </div>
               </DialogHeader>
 
-              <div className="space-y-3 text-sm">
+              <div className="space-y-3 text-sm min-w-0 max-w-full">
                 {selectedDoc.numero && (
                   <div className="flex justify-between py-2 border-b border-border">
                     <span className="text-muted-foreground">Número</span>
@@ -496,7 +496,7 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
                         <object
                           data={selectedDoc.archivo.url}
                           type="application/pdf"
-                          className="w-full h-[400px]"
+                          className="w-full max-w-full h-[400px]"
                         >
                           <p className="p-4 text-sm text-muted-foreground">
                             No se puede mostrar el PDF.{" "}
@@ -544,7 +544,7 @@ export function VehiculoDetail({ vehiculoId, onBack }: VehiculoDetailProps) {
                       )}
                       {rev.mimeType === "application/pdf" && (
                         <div className="mb-3 rounded-lg overflow-hidden border">
-                          <object data={rev.url} type="application/pdf" className="w-full h-[400px]">
+                          <object data={rev.url} type="application/pdf" className="w-full max-w-full h-[400px]">
                             <p className="p-4 text-sm text-muted-foreground">
                               No se puede mostrar.{" "}
                               <a href={rev.url} target="_blank" rel="noopener noreferrer" className="text-primary underline">Descargar</a>
