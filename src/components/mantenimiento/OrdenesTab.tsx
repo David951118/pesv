@@ -63,6 +63,7 @@ import {
   iniciarOrdenTrabajo,
   cerrarOrdenTrabajo,
   anularOrdenTrabajo,
+  eliminarOrdenTrabajo,
 } from "@/services/apirndc";
 import type {
   ApiRndcOrdenTrabajo,
@@ -430,6 +431,59 @@ function AnularDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null; o
   );
 }
 
+// ─── Diálogo: Eliminar (solo ADMIN de la plataforma) ───
+
+function EliminarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [motivo, setMotivo] = useState("");
+
+  useEffect(() => {
+    if (orden) setMotivo("");
+  }, [orden]);
+
+  const mutation = useMutation({
+    mutationFn: async () =>
+      eliminarOrdenTrabajo(orden!._id, motivo.trim() ? { motivo: motivo.trim() } : undefined),
+    onSuccess: () => {
+      toast.success("Orden de trabajo eliminada");
+      queryClient.invalidateQueries({ queryKey: ["mant-ordenes"] });
+      queryClient.invalidateQueries({ queryKey: ["mant-alertas"] });
+      onClose();
+    },
+    onError: (error: Error) => toast.error(error.message || "Error al eliminar la orden"),
+  });
+
+  return (
+    <Dialog open={!!orden} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Eliminar Orden {orden?.numero}</DialogTitle>
+          <DialogDescription>
+            La orden saldrá del módulo de mantenimiento junto con su historial. Si
+            solo quiere dejarla sin efecto conservándola a la vista, use Anular.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label>Motivo (opcional)</Label>
+          <Textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Por qué se elimina esta orden"
+            rows={3}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="destructive" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Eliminar Orden
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Tab de Órdenes ───
 
 export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
@@ -437,6 +491,8 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   const { role } = useAuth();
   // Asignar/anular son de gestión (backend las restringe a admin/cliente_admin)
   const esGestor = role !== "mecanico";
+  // Borrar es exclusivo del ADMIN de la plataforma; el cliente admin solo anula
+  const esAdminPlataforma = role === "admin";
   const [estadoFilter, setEstadoFilter] = useState("all");
   const [tipoFilter, setTipoFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -446,6 +502,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   const [asignarOrden, setAsignarOrden] = useState<ApiRndcOrdenTrabajo | null>(null);
   const [cerrarOrden, setCerrarOrden] = useState<ApiRndcOrdenTrabajo | null>(null);
   const [anularOrden, setAnularOrden] = useState<ApiRndcOrdenTrabajo | null>(null);
+  const [eliminarOrden, setEliminarOrden] = useState<ApiRndcOrdenTrabajo | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["mant-ordenes", estadoFilter, tipoFilter, page],
@@ -628,17 +685,24 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                                   Cerrar
                                 </DropdownMenuItem>
                               )}
+                              {(puedeAnular || esAdminPlataforma) && <DropdownMenuSeparator />}
                               {puedeAnular && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    onClick={() => setAnularOrden(orden)}
-                                  >
-                                    <Ban className="h-4 w-4 mr-2" />
-                                    Anular
-                                  </DropdownMenuItem>
-                                </>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => setAnularOrden(orden)}
+                                >
+                                  <Ban className="h-4 w-4 mr-2" />
+                                  Anular
+                                </DropdownMenuItem>
+                              )}
+                              {esAdminPlataforma && (
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => setEliminarOrden(orden)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Eliminar
+                                </DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -683,6 +747,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
       <AsignarDialog orden={asignarOrden} onClose={() => setAsignarOrden(null)} />
       <CerrarDialog orden={cerrarOrden} onClose={() => setCerrarOrden(null)} />
       <AnularDialog orden={anularOrden} onClose={() => setAnularOrden(null)} />
+      <EliminarDialog orden={eliminarOrden} onClose={() => setEliminarOrden(null)} />
     </ContentCard>
   );
 }

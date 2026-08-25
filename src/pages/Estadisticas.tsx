@@ -134,6 +134,31 @@ interface TerceroOption {
   roles?: string[];
 }
 
+// ── Rango por defecto: mes en curso ──
+// Las estadísticas se leen contra el corte mensual, así que el filtro arranca
+// en el día 1 del mes actual y termina hoy (no 30 días hacia atrás).
+
+/** Fecha local en formato YYYY-MM-DD (sin desfase por zona horaria). */
+function aISO(fecha: Date): string {
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  return `${fecha.getFullYear()}-${mes}-${dia}`;
+}
+
+function primerDiaMesActual(): string {
+  const hoy = new Date();
+  return aISO(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+}
+
+function hoyISO(): string {
+  return aISO(new Date());
+}
+
+/** "Agosto 2026" para rotular el rango vigente. */
+function nombreMesActual(): string {
+  return new Date().toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+}
+
 // ── Colors ──
 const COLOR_APROBADO = "#22c55e"; // green-500 (vibrant)
 const COLOR_NOVEDAD = "#fbbf24"; // amber-400 (vibrant)
@@ -177,19 +202,22 @@ export default function Estadisticas() {
   const tooltipBorder = isDark ? "#334155" : "#e2e8f0";
 
   // Filters
-  const [fechaDesde, setFechaDesde] = useState("");
-  const [fechaHasta, setFechaHasta] = useState("");
+  // Por defecto las estadísticas muestran el MES EN CURSO: del día 1 a hoy
+  // (no una ventana móvil de 30 días), para que cuadren con el corte mensual.
+  const [fechaDesde, setFechaDesde] = useState(primerDiaMesActual);
+  const [fechaHasta, setFechaHasta] = useState(hoyISO);
   const [vehiculoId, setVehiculoId] = useState<string>("all");
   const [conductorId, setConductorId] = useState<string>("all");
   const [chartType, setChartType] = useState<ChartType>("pie");
 
-  // Filtros del tab gerencial (rango opcional, por defecto histórico completo)
-  const [kpiDesde, setKpiDesde] = useState("");
-  const [kpiHasta, setKpiHasta] = useState("");
+  // Filtros del tab gerencial: mismo criterio, el mes en curso
+  const [kpiDesde, setKpiDesde] = useState(primerDiaMesActual);
+  const [kpiHasta, setKpiHasta] = useState(hoyISO);
 
+  // Restablecer = volver al mes en curso (no a "sin filtro")
   const clearFilters = () => {
-    setFechaDesde("");
-    setFechaHasta("");
+    setFechaDesde(primerDiaMesActual());
+    setFechaHasta(hoyISO());
     setVehiculoId("all");
     setConductorId("all");
   };
@@ -458,7 +486,14 @@ export default function Estadisticas() {
           <TabsContent value="preoperacionales">
 
         {/* Filtros */}
-        <ContentCard className="mt-6" header={{ title: "Filtros", icon: <Calendar className="h-4 w-4" /> }}>
+        <ContentCard
+          className="mt-6"
+          header={{
+            title: "Filtros",
+            subtitle: `Por defecto, el mes en curso (${nombreMesActual()})`,
+            icon: <Calendar className="h-4 w-4" />,
+          }}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Fecha desde</label>
@@ -517,7 +552,7 @@ export default function Estadisticas() {
             </div>
             <div className="flex items-end">
               <Button variant="outline" onClick={clearFilters} className="w-full">
-                Limpiar filtros
+                Mes actual
               </Button>
             </div>
           </div>
@@ -808,7 +843,7 @@ export default function Estadisticas() {
             {/* Filtro de rango de fechas (opcional) */}
             <ContentCard
               className="mt-6"
-              header={{ title: "Filtros", subtitle: "Rango opcional — por defecto histórico completo", icon: <Calendar className="h-4 w-4" /> }}
+              header={{ title: "Filtros", subtitle: `Por defecto, el mes en curso (${nombreMesActual()})`, icon: <Calendar className="h-4 w-4" /> }}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
@@ -819,16 +854,26 @@ export default function Estadisticas() {
                   <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
                   <Input type="date" value={kpiHasta} onChange={(e) => setKpiHasta(e.target.value)} />
                 </div>
-                <div className="flex items-end">
+                <div className="flex items-end gap-2">
                   <Button
                     variant="outline"
+                    onClick={() => {
+                      setKpiDesde(primerDiaMesActual());
+                      setKpiHasta(hoyISO());
+                    }}
+                    className="flex-1"
+                  >
+                    Mes actual
+                  </Button>
+                  <Button
+                    variant="ghost"
                     onClick={() => {
                       setKpiDesde("");
                       setKpiHasta("");
                     }}
-                    className="w-full"
+                    className="flex-1"
                   >
-                    Limpiar rango
+                    Histórico
                   </Button>
                 </div>
               </div>

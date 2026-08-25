@@ -426,6 +426,17 @@ export async function anularOrdenTrabajo(
   );
 }
 
+/** Borra una orden de trabajo. El backend lo restringe a ROLE_ADMIN. */
+export async function eliminarOrdenTrabajo(
+  id: string,
+  payload?: { motivo?: string },
+  signal?: AbortSignal,
+) {
+  return apirndcProxyCall<{ success: boolean; message?: string }>(
+    'DELETE', `/mantenimiento/ordenes/${id}`, payload as Record<string, unknown>, signal,
+  );
+}
+
 // ─── Mantenimiento: Alertas ───
 
 export async function getAlertasMantenimiento(
