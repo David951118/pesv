@@ -139,6 +139,7 @@ interface VehiculoInfo {
   linea: string;
   modelo: string;
   cellviId: number;
+  extraDisponible: boolean;
   found: true;
 }
 
@@ -261,6 +262,7 @@ export default function ConductorPreoperativas() {
               linea: rawVeh.linea || "",
               modelo: rawVeh.modelo || "",
               cellviId: v.id,
+              extraDisponible: Boolean(rawVeh.preoperativaExtraDisponible),
               found: true,
             } as VehiculoInfo;
           } catch {
@@ -541,6 +543,7 @@ export default function ConductorPreoperativas() {
       setFirmaUrl("");
       setSelectedVehiculo(null);
       queryClient.invalidateQueries({ queryKey: ["conductor-preop-hoy"] });
+      queryClient.invalidateQueries({ queryKey: ["conductor-vehiculos-check"] });
     },
     onError: (error: any) => {
       if (error.status === 409) {
@@ -1793,7 +1796,10 @@ export default function ConductorPreoperativas() {
                 );
               }
 
-              const yaHecha = preopHoyMap[v._id] === true;
+              const preopHoy = preopHoyMap[v._id] === true;
+              // Si un admin habilitó una preoperacional extra hoy, el vehículo
+              // vuelve a estar disponible aunque otro conductor ya la haya hecho.
+              const yaHecha = preopHoy && !v.extraDisponible;
               return (
                 <div
                   key={v.cellviId}
@@ -1813,6 +1819,11 @@ export default function ConductorPreoperativas() {
                       <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
                     )}
                   </div>
+                  {preopHoy && v.extraDisponible && (
+                    <div className="w-full text-center py-1.5 mb-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs font-medium text-amber-700 dark:text-amber-400">
+                      Preoperacional extra habilitada por administración
+                    </div>
+                  )}
                   {yaHecha ? (
                     <div className="w-full text-center py-2 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-sm font-medium text-green-700 dark:text-green-400">
                       Preoperacional completada hoy
