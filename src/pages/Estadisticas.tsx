@@ -45,6 +45,7 @@ import {
   Trophy,
 } from "lucide-react";
 import type { ApiRndcKpisGerenciales } from "@/services/apirndc/apirndc.types";
+import { AnalisisVehiculo } from "@/components/estadisticas/AnalisisVehiculo";
 import {
   BarChart,
   Bar,
@@ -1088,6 +1089,10 @@ export default function Estadisticas() {
                     </p>
                   )}
                 </ContentCard>
+
+                {/* Análisis por vehículo (popup con preoperativas, tanqueos,
+                    mantenimientos, costos y recorrido real) */}
+                <AnalisisVehiculo vehiculos={vehiculos} isDark={isDark} />
               </>
             )}
           </TabsContent>
