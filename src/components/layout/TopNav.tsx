@@ -20,6 +20,7 @@ import {
   BarChart3,
   Wrench,
   Boxes,
+  Bell,
 } from "lucide-react";
 import logoAsegurar from "@/assets/logos/triangulo1 png.png";
 import { cn } from "@/lib/utils";
@@ -84,6 +85,7 @@ const navItems: NavItem[] = [
   { title: "Estadísticas", href: "/estadisticas", icon: BarChart3, roles: ["admin", "supervisor"] },
 
   // Admin only
+  { title: "Alertas", href: "/alertas", icon: Bell, roles: ["admin"] },
   { title: "Empresas", href: "/empresas", icon: Building2, roles: ["admin"] },
   { title: "Papelera", href: "/papelera", icon: Trash2, roles: ["admin"] },
 ];

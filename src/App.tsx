@@ -13,6 +13,7 @@ import Index from "./pages/Index";
 import Documentos from "./pages/Documentos";
 import Preoperativas from "./pages/Preoperativas";
 import NuevaPreoperacionalAdmin from "./pages/admin/NuevaPreoperacionalAdmin";
+import AlertasAdmin from "./pages/admin/AlertasAdmin";
 
 import FUEC from "./pages/FUEC";
 import Mapa from "./pages/Mapa";
@@ -69,6 +70,16 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
                   <Index />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Visor de alertas — solo admins */}
+            <Route
+              path="/alertas"
+              element={
+                <ProtectedRoute allowedRoles={["admin"]}>
+                  <AlertasAdmin />
                 </ProtectedRoute>
               }
             />
