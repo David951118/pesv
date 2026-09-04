@@ -43,6 +43,7 @@ import {
   OT_TIPO_LABELS,
   useMecanicos,
 } from "./mantenimiento.helpers";
+import { FacturaOtField, subirFacturaOt } from "./FacturaOtField";
 
 export interface OrdenPrefill {
   vehiculoId?: string;
@@ -110,6 +111,8 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
   const [form, setForm] = useState<OrdenForm>(initialForm);
   const [kmInfo, setKmInfo] = useState<ApiRndcKilometraje | null>(null);
   const [loadingKm, setLoadingKm] = useState(false);
+  const [facturaFile, setFacturaFile] = useState<File | null>(null);
+  const [facturaProgress, setFacturaProgress] = useState<number | null>(null);
 
   // Reset / prefill when the dialog opens
   useEffect(() => {
@@ -123,6 +126,8 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
         planItems: prefill?.planItemNombre ? [prefill.planItemNombre] : [],
       });
       setKmInfo(null);
+      setFacturaFile(null);
+      setFacturaProgress(null);
     }
   }, [open, prefill]);
 
@@ -211,6 +216,15 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
       if (form.plan) payload.plan = form.plan;
       // El alert engine reinicia el ítem del plan por su nombre al cerrar la OT.
       if (form.planItems.length > 0) payload.planItemNombre = form.planItems[0];
+      // La factura se sube a S3 primero; al API solo van los metadatos.
+      if (facturaFile) {
+        setFacturaProgress(0);
+        try {
+          payload.factura = await subirFacturaOt(facturaFile, (p) => setFacturaProgress(p.percent));
+        } finally {
+          setFacturaProgress(null);
+        }
+      }
       return createOrdenTrabajo(payload);
     },
     onSuccess: (res) => {
@@ -571,6 +585,14 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
               </div>
             </div>
           </div>
+
+          {/* Factura (opcional) */}
+          <FacturaOtField
+            file={facturaFile}
+            onChange={setFacturaFile}
+            disabled={createMutation.isPending}
+            progress={facturaProgress}
+          />
 
           {/* Total estimado */}
           {totalEstimado > 0 && (

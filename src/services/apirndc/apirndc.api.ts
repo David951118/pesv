@@ -21,6 +21,7 @@ import type {
   ApiRndcOrdenTrabajo,
   ApiRndcOrdenTrabajoCreatePayload,
   ApiRndcOrdenTrabajoCerrarPayload,
+  ApiRndcOtFactura,
   ApiRndcOtActividad,
   ApiRndcOtRepuesto,
   ApiRndcOtManoDeObra,
@@ -232,7 +233,7 @@ export async function hardDeleteDocumento(id: string, signal?: AbortSignal) {
 }
 
 export async function getPresignedUrl(
-  payload: { fileName: string; mimeType: string },
+  payload: { fileName: string; mimeType: string; folder?: string },
   signal?: AbortSignal,
 ) {
   return apirndcProxyCall<{ success: boolean; data: { uploadUrl: string; key: string; publicUrl: string } }>(
@@ -413,6 +414,24 @@ export async function cerrarOrdenTrabajo(
 ) {
   return apirndcProxyCall<{ success: boolean; data: ApiRndcOrdenTrabajo }>(
     'POST', `/mantenimiento/ordenes/${id}/cerrar`, payload as unknown as Record<string, unknown>, signal,
+  );
+}
+
+/** Adjunta o reemplaza la factura de la OT (metadatos del archivo ya subido a S3) */
+export async function adjuntarFacturaOrdenTrabajo(
+  id: string,
+  factura: ApiRndcOtFactura,
+  signal?: AbortSignal,
+) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcOrdenTrabajo }>(
+    'PUT', `/mantenimiento/ordenes/${id}/factura`, factura as unknown as Record<string, unknown>, signal,
+  );
+}
+
+/** Quita la factura de la OT (el backend borra el archivo de S3) */
+export async function eliminarFacturaOrdenTrabajo(id: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcOrdenTrabajo }>(
+    'DELETE', `/mantenimiento/ordenes/${id}/factura`, undefined, signal,
   );
 }
 

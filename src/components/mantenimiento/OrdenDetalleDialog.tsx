@@ -1,4 +1,9 @@
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -16,7 +21,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { ApiRndcOrdenTrabajo } from "@/services/apirndc/apirndc.types";
+import {
+  adjuntarFacturaOrdenTrabajo,
+  eliminarFacturaOrdenTrabajo,
+} from "@/services/apirndc";
+import type {
+  ApiRndcOrdenTrabajo,
+  ApiRndcOtFactura,
+} from "@/services/apirndc/apirndc.types";
 import {
   formatCOP,
   formatFecha,
@@ -29,11 +41,20 @@ import {
   OT_PRIORIDAD_LABELS,
   OT_TIPO_LABELS,
 } from "./mantenimiento.helpers";
+import { FacturaOtField, FacturaOtResumen, subirFacturaOt } from "./FacturaOtField";
 
 interface OrdenDetalleDialogProps {
   orden: ApiRndcOrdenTrabajo | null;
   onClose: () => void;
+  /** Permite adjuntar, reemplazar o quitar la factura (gestión y mecánico) */
+  puedeEditarFactura?: boolean;
 }
+
+const HISTORIAL_ACCION_LABELS: Record<string, string> = {
+  FACTURA_ADJUNTADA: "Factura adjuntada",
+  FACTURA_REEMPLAZADA: "Factura reemplazada",
+  FACTURA_ELIMINADA: "Factura eliminada",
+};
 
 function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -44,7 +65,168 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function OrdenDetalleDialog({ orden, onClose }: OrdenDetalleDialogProps) {
+/**
+ * Sección de factura: muestra la actual (si hay) y, si el usuario puede editar,
+ * permite subir una nueva, reemplazarla o quitarla sin salir del detalle.
+ * Tiene hooks propios, por eso vive en un componente aparte y se remonta
+ * (key) cada vez que cambia la orden abierta.
+ */
+function FacturaSection({
+  orden,
+  puedeEditar,
+}: {
+  orden: ApiRndcOrdenTrabajo;
+  puedeEditar: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [factura, setFactura] = useState<ApiRndcOtFactura | null>(orden.factura ?? null);
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [reemplazando, setReemplazando] = useState(false);
+  const [confirmarQuitar, setConfirmarQuitar] = useState(false);
+
+  const editable = puedeEditar && orden.estado !== "ANULADA";
+
+  const subirMutation = useMutation({
+    mutationFn: async () => {
+      if (!file) throw new Error("Seleccione el archivo de la factura");
+      setProgress(0);
+      try {
+        const meta = await subirFacturaOt(file, (p) => setProgress(p.percent));
+        return adjuntarFacturaOrdenTrabajo(orden._id, meta);
+      } finally {
+        setProgress(null);
+      }
+    },
+    onSuccess: (res) => {
+      toast.success(factura ? "Factura reemplazada" : "Factura adjuntada");
+      setFactura(res.data?.factura ?? null);
+      setFile(null);
+      setReemplazando(false);
+      queryClient.invalidateQueries({ queryKey: ["mant-ordenes"] });
+    },
+    onError: (error: Error) => toast.error(error.message || "Error al subir la factura"),
+  });
+
+  const quitarMutation = useMutation({
+    mutationFn: () => eliminarFacturaOrdenTrabajo(orden._id),
+    onSuccess: () => {
+      toast.success("Factura eliminada");
+      setFactura(null);
+      setConfirmarQuitar(false);
+      queryClient.invalidateQueries({ queryKey: ["mant-ordenes"] });
+    },
+    onError: (error: Error) => toast.error(error.message || "Error al eliminar la factura"),
+  });
+
+  const ocupado = subirMutation.isPending || quitarMutation.isPending;
+  const mostrarSelector = editable && (!factura || reemplazando);
+
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-semibold">Factura</h4>
+
+      {factura && (
+        <FacturaOtResumen factura={factura}>
+          {editable && !confirmarQuitar && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={ocupado}
+                onClick={() => {
+                  setReemplazando((v) => !v);
+                  setFile(null);
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-1" />
+                {reemplazando ? "Cancelar" : "Reemplazar"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={ocupado}
+                onClick={() => setConfirmarQuitar(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Quitar
+              </Button>
+            </>
+          )}
+          {editable && confirmarQuitar && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">¿Quitar la factura? El archivo se borra.</span>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={ocupado}
+                onClick={() => quitarMutation.mutate()}
+              >
+                {quitarMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                Sí, quitar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={ocupado}
+                onClick={() => setConfirmarQuitar(false)}
+              >
+                No
+              </Button>
+            </div>
+          )}
+        </FacturaOtResumen>
+      )}
+
+      {!factura && !editable && (
+        <p className="text-sm text-muted-foreground">Sin factura adjunta.</p>
+      )}
+
+      {mostrarSelector && (
+        <div className="space-y-2">
+          <FacturaOtField
+            label={null}
+            file={file}
+            onChange={setFile}
+            disabled={ocupado}
+            progress={progress}
+            hint={
+              factura
+                ? "El nuevo archivo reemplaza la factura actual. PDF o imagen, máximo 10 MB."
+                : undefined
+            }
+          />
+          {file && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={ocupado}
+              onClick={() => subirMutation.mutate()}
+            >
+              {subirMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-1" />
+              )}
+              {factura ? "Subir y reemplazar" : "Subir factura"}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function OrdenDetalleDialog({
+  orden,
+  onClose,
+  puedeEditarFactura = false,
+}: OrdenDetalleDialogProps) {
   if (!orden) return null;
 
   const costoManoDeObra = orden.manoDeObra?.costo ?? 0;
@@ -147,6 +329,9 @@ export function OrdenDetalleDialog({ orden, onClose }: OrdenDetalleDialogProps) 
             </div>
           </div>
 
+          {/* Factura (opcional) */}
+          <FacturaSection key={orden._id} orden={orden} puedeEditar={puedeEditarFactura} />
+
           {/* Observaciones de cierre */}
           {orden.observacionesCierre && (
             <div className="space-y-2">
@@ -169,7 +354,9 @@ export function OrdenDetalleDialog({ orden, onClose }: OrdenDetalleDialogProps) 
                       {idx < orden.historial!.length - 1 && <div className="w-px flex-1 bg-border" />}
                     </div>
                     <div className="pb-3">
-                      <p className="text-sm font-medium">{entry.accion}</p>
+                      <p className="text-sm font-medium">
+                        {HISTORIAL_ACCION_LABELS[entry.accion] ?? entry.accion}
+                      </p>
                       {entry.detalle && <p className="text-sm text-muted-foreground">{entry.detalle}</p>}
                       <p className="text-xs text-muted-foreground">
                         {formatFechaHora(entry.fecha)}{entry.usuario ? ` · ${entry.usuario}` : ""}

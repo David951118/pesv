@@ -342,6 +342,17 @@ export interface ApiRndcOtManoDeObra {
   costo?: number;
 }
 
+/** Factura opcional de la OT: archivo (PDF/imagen) guardado en S3 */
+export interface ApiRndcOtFactura {
+  url: string;
+  key: string;
+  nombre?: string;
+  mimeType?: string;
+  tamano?: number | null;
+  subidoPor?: string;
+  fecha?: string;
+}
+
 export interface ApiRndcOtHistorialEntry {
   fecha: string;
   usuario?: string;
@@ -370,6 +381,7 @@ export interface ApiRndcOrdenTrabajo {
   costoRepuestos?: number;
   costoTotal?: number;
   observacionesCierre?: string;
+  factura?: ApiRndcOtFactura | null;
   historial?: ApiRndcOtHistorialEntry[];
   createdAt: string;
 }
@@ -388,6 +400,7 @@ export interface ApiRndcOrdenTrabajoCreatePayload {
   manoDeObra?: ApiRndcOtManoDeObra;
   plan?: string;
   planItemNombre?: string;
+  factura?: ApiRndcOtFactura;
 }
 
 export interface ApiRndcOrdenTrabajoCerrarPayload {
@@ -397,6 +410,7 @@ export interface ApiRndcOrdenTrabajoCerrarPayload {
   repuestos?: ApiRndcOtRepuesto[];
   manoDeObra?: ApiRndcOtManoDeObra;
   taller?: string;
+  factura?: ApiRndcOtFactura;
 }
 
 // ─── Mantenimiento: Alertas ───

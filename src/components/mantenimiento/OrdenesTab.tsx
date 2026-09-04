@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Play,
   Plus,
+  Receipt,
   Search,
   Trash2,
   UserCheck,
@@ -84,6 +85,7 @@ import {
   useMecanicos,
 } from "./mantenimiento.helpers";
 import { OrdenDetalleDialog } from "./OrdenDetalleDialog";
+import { FacturaOtField, subirFacturaOt } from "./FacturaOtField";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -184,9 +186,13 @@ function CerrarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null; o
   const [repuestos, setRepuestos] = useState<RepuestoForm[]>([]);
   const [horas, setHoras] = useState("");
   const [costoManoDeObra, setCostoManoDeObra] = useState("");
+  const [facturaFile, setFacturaFile] = useState<File | null>(null);
+  const [facturaProgress, setFacturaProgress] = useState<number | null>(null);
 
   useEffect(() => {
     if (orden) {
+      setFacturaFile(null);
+      setFacturaProgress(null);
       setKilometraje(orden.kilometraje !== undefined && orden.kilometraje !== null ? String(orden.kilometraje) : "");
       setObservaciones("");
       setTaller(orden.taller ?? "");
@@ -230,6 +236,14 @@ function CerrarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null; o
           horas: Number(horas) || 0,
           costo: Number(costoManoDeObra) || 0,
         };
+      }
+      if (facturaFile) {
+        setFacturaProgress(0);
+        try {
+          payload.factura = await subirFacturaOt(facturaFile, (p) => setFacturaProgress(p.percent));
+        } finally {
+          setFacturaProgress(null);
+        }
       }
       return cerrarOrdenTrabajo(orden!._id, payload);
     },
@@ -368,6 +382,18 @@ function CerrarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null; o
               rows={3}
             />
           </div>
+
+          <FacturaOtField
+            file={facturaFile}
+            onChange={setFacturaFile}
+            disabled={mutation.isPending}
+            progress={facturaProgress}
+            hint={
+              orden?.factura
+                ? "La orden ya tiene una factura adjunta; si sube otra, la reemplaza. PDF o imagen, máximo 10 MB."
+                : undefined
+            }
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
@@ -503,6 +529,10 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   // porque el AUDITOR comparte el rol "supervisor" y es de solo lectura.
   const puedeEliminar = (apiRoles ?? []).some((r) =>
     ["ROLE_ADMIN", "ROLE_SUPER_ADMIN", "ROLE_CLIENTE_ADMIN"].includes(r),
+  );
+  // Factura: quien opera la OT (gestión + mecánico); el auditor y el conductor solo la ven.
+  const puedeEditarFactura = (apiRoles ?? []).some((r) =>
+    ["ROLE_ADMIN", "ROLE_SUPER_ADMIN", "ROLE_CLIENTE_ADMIN", "ROLE_MECANICO"].includes(r),
   );
   const [estadoFilter, setEstadoFilter] = useState("all");
   const [tipoFilter, setTipoFilter] = useState("all");
@@ -648,7 +678,16 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                     const puedeAnular = esGestor && orden.estado !== "CERRADA" && orden.estado !== "ANULADA";
                     return (
                       <TableRow key={orden._id}>
-                        <TableCell className="font-medium">{orden.numero}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            {orden.numero}
+                            {orden.factura && (
+                              <span title="Factura adjunta" className="text-muted-foreground">
+                                <Receipt className="h-3.5 w-3.5" aria-label="Factura adjunta" />
+                              </span>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell>{orden.vehiculo?.placa || orden.placa || "-"}</TableCell>
                         <TableCell>
                           <span className="text-sm">{OT_TIPO_LABELS[orden.tipo] ?? orden.tipo}</span>
@@ -762,7 +801,11 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
       )}
 
       {/* Diálogos */}
-      <OrdenDetalleDialog orden={detalleOrden} onClose={() => setDetalleOrden(null)} />
+      <OrdenDetalleDialog
+        orden={detalleOrden}
+        onClose={() => setDetalleOrden(null)}
+        puedeEditarFactura={puedeEditarFactura}
+      />
       <AsignarDialog orden={asignarOrden} onClose={() => setAsignarOrden(null)} />
       <CerrarDialog orden={cerrarOrden} onClose={() => setCerrarOrden(null)} />
       <AnularDialog orden={anularOrden} onClose={() => setAnularOrden(null)} />
