@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSessionState } from "@/hooks/useSessionState";
 import { useAuth } from "@/hooks/useAuth";
-import { RolesMultiSelect, splitRoles, SHOW_ACCESS_ROLES } from "@/components/usuarios/RolesMultiSelect";
+import { RolesMultiSelect, splitRoles, requiereUsuarioCellvi, SHOW_ACCESS_ROLES } from "@/components/usuarios/RolesMultiSelect";
+import { getTerceroNombre } from "@/components/inventario/inventario.helpers";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { uploadFileToS3 } from "@/lib/uploadToS3";
@@ -99,6 +100,7 @@ interface TerceroData {
   tipoId: string;
   nombres: string;
   apellidos: string;
+  razonSocial?: string; // persona jurídica (NIT)
   roles: string[];
   rolesSistema?: string[];
   usuarioCellvi: string;
@@ -142,6 +144,16 @@ function getRolLabel(rol: string): string {
   return labels[rol] || rol;
 }
 
+// Tipos de documento aceptados por el API RNDC (enum Tercero.tipoId).
+// NIT identifica a una persona jurídica: usa razón social en vez de nombres.
+const TIPO_ID_OPTIONS: { value: string; label: string }[] = [
+  { value: "CC", label: "CC - Cédula" },
+  { value: "CE", label: "CE - Cédula Extranjería" },
+  { value: "NIT", label: "NIT - Persona jurídica" },
+  { value: "PEP", label: "PEP - Permiso Especial de Permanencia" },
+  { value: "PASAPORTE", label: "Pasaporte" },
+];
+
 function getTerceroPhotoUrl(tercero: TerceroData): string | undefined {
   return tercero.foto?.url || tercero.fotoUrl;
 }
@@ -166,6 +178,7 @@ export default function Usuarios() {
     tipoId: "CC",
     nombres: "",
     apellidos: "",
+    razonSocial: "",
     roles: ["CONDUCTOR"] as string[],
     usuarioCellvi: "",
     telefono: "",
@@ -187,6 +200,7 @@ export default function Usuarios() {
     tipoId: "CC",
     nombres: "",
     apellidos: "",
+    razonSocial: "",
     roles: ["CONDUCTOR"] as string[],
     usuarioCellvi: "",
     telefono: "",
@@ -324,15 +338,19 @@ export default function Usuarios() {
       if (!targetEmpresa) throw new Error(isAdmin ? "Seleccione una empresa" : "No se encontró empresa. Cierre sesión e inicie sesión de nuevo.");
 
       const { roles, rolesSistema } = splitRoles(terceroForm.roles ?? []);
+      const esNit = terceroForm.tipoId === "NIT";
       const body: Record<string, unknown> = {
-        identificacion: terceroForm.identificacion,
+        identificacion: terceroForm.identificacion.trim(),
         tipoId: terceroForm.tipoId,
         empresa: targetEmpresa,
-        nombres: terceroForm.nombres,
-        apellidos: terceroForm.apellidos,
+        // Persona jurídica (NIT) usa razón social; persona natural, nombres y apellidos
+        nombres: esNit ? "" : terceroForm.nombres.trim(),
+        apellidos: esNit ? "" : terceroForm.apellidos.trim(),
+        razonSocial: esNit ? (terceroForm.razonSocial ?? "").trim() : "",
         roles,
         rolesSistema,
-        usuarioCellvi: terceroForm.usuarioCellvi,
+        // Solo puede ir vacío cuando el tercero es únicamente proveedor
+        usuarioCellvi: terceroForm.usuarioCellvi.trim(),
         contacto: {
           telefono: terceroForm.telefono,
         },
@@ -385,15 +403,17 @@ export default function Usuarios() {
       if (!targetEmpresa) throw new Error(isAdmin ? "Seleccione una empresa" : "No se encontró empresa.");
 
       const { roles, rolesSistema } = splitRoles(editForm.roles ?? []);
+      const esNit = editForm.tipoId === "NIT";
       const body: Record<string, unknown> = {
-        identificacion: editForm.identificacion,
+        identificacion: editForm.identificacion.trim(),
         tipoId: editForm.tipoId,
         empresa: targetEmpresa,
-        nombres: editForm.nombres,
-        apellidos: editForm.apellidos,
+        nombres: esNit ? "" : editForm.nombres.trim(),
+        apellidos: esNit ? "" : editForm.apellidos.trim(),
+        razonSocial: esNit ? (editForm.razonSocial ?? "").trim() : "",
         roles,
         rolesSistema,
-        usuarioCellvi: editForm.usuarioCellvi,
+        usuarioCellvi: editForm.usuarioCellvi.trim(),
         contacto: {
           telefono: editForm.telefono,
         },
@@ -431,15 +451,17 @@ export default function Usuarios() {
       // Refresh viewing user
       if (viewingUser) {
         const split = splitRoles(editForm.roles ?? []);
+        const esNitEdit = editForm.tipoId === "NIT";
         const updatedUser: TerceroData = {
           ...viewingUser,
-          identificacion: editForm.identificacion,
+          identificacion: editForm.identificacion.trim(),
           tipoId: editForm.tipoId,
-          nombres: editForm.nombres,
-          apellidos: editForm.apellidos,
+          nombres: esNitEdit ? "" : editForm.nombres.trim(),
+          apellidos: esNitEdit ? "" : editForm.apellidos.trim(),
+          razonSocial: esNitEdit ? (editForm.razonSocial ?? "").trim() : "",
           roles: split.roles,
           rolesSistema: split.rolesSistema,
-          usuarioCellvi: editForm.usuarioCellvi,
+          usuarioCellvi: editForm.usuarioCellvi.trim(),
           contacto: { telefono: editForm.telefono },
           datosConductor: split.roles.includes("CONDUCTOR") && editForm.tipoSangre
             ? { tipoSangre: editForm.tipoSangre }
@@ -488,10 +510,15 @@ export default function Usuarios() {
 
   const validateCreateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    if (!terceroForm.nombres.trim()) errors.nombres = "Nombres es requerido";
-    if (!terceroForm.apellidos.trim()) errors.apellidos = "Apellidos es requerido";
+    if (terceroForm.tipoId === "NIT") {
+      if (!(terceroForm.razonSocial ?? "").trim()) errors.razonSocial = "Razón social es requerida";
+    } else {
+      if (!terceroForm.nombres.trim()) errors.nombres = "Nombres es requerido";
+      if (!terceroForm.apellidos.trim()) errors.apellidos = "Apellidos es requerido";
+    }
     if (!terceroForm.identificacion.trim()) errors.identificacion = "Identificación es requerida";
-    if (!terceroForm.usuarioCellvi.trim()) errors.usuarioCellvi = "Usuario Cellvi es requerido";
+    if (requiereUsuarioCellvi(terceroForm.roles ?? []) && !terceroForm.usuarioCellvi.trim())
+      errors.usuarioCellvi = "Usuario Cellvi es requerido (solo el proveedor puede quedar sin usuario)";
     if (splitRoles(terceroForm.roles ?? []).roles.length === 0)
       errors.roles = "Seleccione al menos un rol de negocio";
     if (isAdmin && !terceroForm.empresaId) errors.empresaId = "Seleccione una empresa";
@@ -523,6 +550,7 @@ export default function Usuarios() {
       tipoId: target.tipoId ?? "CC",
       nombres: target.nombres ?? "",
       apellidos: target.apellidos ?? "",
+      razonSocial: target.razonSocial ?? "",
       roles: [...(target.roles ?? []), ...(target.rolesSistema ?? [])],
       usuarioCellvi: target.usuarioCellvi ?? "",
       telefono: target.contacto?.telefono || "",
@@ -557,7 +585,7 @@ export default function Usuarios() {
 
   // Filter and paginate
   const filteredTerceros = terceros?.filter((t) => {
-    const fullName = `${t.nombres} ${t.apellidos}`.toLowerCase();
+    const fullName = `${t.razonSocial ?? ""} ${t.nombres ?? ""} ${t.apellidos ?? ""}`.toLowerCase();
     const matchesSearch =
       fullName.includes(search.toLowerCase()) ||
       t.identificacion?.toLowerCase().includes(search.toLowerCase()) ||
@@ -897,7 +925,7 @@ export default function Usuarios() {
                   {getTerceroPhotoUrl(viewingUser) ? (
                     <img
                       src={getTerceroPhotoUrl(viewingUser)}
-                      alt={`${viewingUser.nombres} ${viewingUser.apellidos}`}
+                      alt={getTerceroNombre(viewingUser)}
                       className="h-20 w-20 rounded-lg object-cover"
                     />
                   ) : (
@@ -907,7 +935,7 @@ export default function Usuarios() {
                   )}
                   <div className="flex-1">
                     <h2 className="text-2xl font-bold text-foreground">
-                      {viewingUser.nombres} {viewingUser.apellidos}
+                      {getTerceroNombre(viewingUser)}
                     </h2>
                     <p className="text-muted-foreground">
                       {viewingUser.tipoId} {viewingUser.identificacion}
@@ -932,7 +960,7 @@ export default function Usuarios() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="bg-card border rounded-lg p-4">
                   <p className="text-sm text-muted-foreground">Usuario Cellvi</p>
-                  <p className="font-medium">{viewingUser.usuarioCellvi}</p>
+                  <p className="font-medium">{viewingUser.usuarioCellvi || "Sin usuario (no inicia sesión)"}</p>
                 </div>
                 <div className="bg-card border rounded-lg p-4">
                   <p className="text-sm text-muted-foreground">Teléfono</p>
@@ -1047,7 +1075,7 @@ export default function Usuarios() {
                                     <User className="h-4 w-4 text-muted-foreground" />
                                   </div>
                                   <p className="font-medium">
-                                    {tercero.nombres} {tercero.apellidos}
+                                    {getTerceroNombre(tercero)}
                                   </p>
                                 </div>
                               </TableCell>
@@ -1076,7 +1104,7 @@ export default function Usuarios() {
                                 </TableCell>
                               )}
                               <TableCell>
-                                <span className="text-sm">{tercero.usuarioCellvi}</span>
+                                <span className="text-sm">{tercero.usuarioCellvi || "-"}</span>
                               </TableCell>
                               <TableCell>
                                 <span className="text-sm text-muted-foreground">
@@ -1189,59 +1217,72 @@ export default function Usuarios() {
                 setEmpresaPopoverOpen,
               )}
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>Nombres *</Label>
-                  <Input
-                    value={terceroForm.nombres}
-                    onChange={(e) => { setTerceroForm({ ...terceroForm, nombres: e.target.value }); setCreateErrors((p) => ({ ...p, nombres: "" })); }}
-                    placeholder="Nombres"
-                    className={createErrors.nombres ? "border-destructive" : ""}
-                  />
-                  {createErrors.nombres && <p className="text-xs text-destructive">{createErrors.nombres}</p>}
-                </div>
-                <div className="space-y-1">
-                  <Label>Apellidos *</Label>
-                  <Input
-                    value={terceroForm.apellidos}
-                    onChange={(e) => { setTerceroForm({ ...terceroForm, apellidos: e.target.value }); setCreateErrors((p) => ({ ...p, apellidos: "" })); }}
-                    placeholder="Apellidos"
-                    className={createErrors.apellidos ? "border-destructive" : ""}
-                  />
-                  {createErrors.apellidos && <p className="text-xs text-destructive">{createErrors.apellidos}</p>}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Tipo Documento *</Label>
                   <Select
                     value={terceroForm.tipoId}
-                    onValueChange={(value) => setTerceroForm({ ...terceroForm, tipoId: value })}
+                    onValueChange={(value) => { setTerceroForm({ ...terceroForm, tipoId: value }); setCreateErrors((p) => ({ ...p, nombres: "", apellidos: "", razonSocial: "" })); }}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="CC">CC - Cédula</SelectItem>
-                      <SelectItem value="CE">CE - Cédula Extranjería</SelectItem>
-                      <SelectItem value="NIT">NIT</SelectItem>
-                      <SelectItem value="TI">TI - Tarjeta Identidad</SelectItem>
-                      <SelectItem value="PA">PA - Pasaporte</SelectItem>
+                      {TIPO_ID_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Identificación *</Label>
+                  <Label>{terceroForm.tipoId === "NIT" ? "NIT *" : "Identificación *"}</Label>
                   <Input
                     value={terceroForm.identificacion}
                     onChange={(e) => { setTerceroForm({ ...terceroForm, identificacion: e.target.value }); setCreateErrors((p) => ({ ...p, identificacion: "" })); }}
-                    placeholder="Número de documento"
+                    placeholder={terceroForm.tipoId === "NIT" ? "Ej: 900123456-7" : "Número de documento"}
                     className={createErrors.identificacion ? "border-destructive" : ""}
                   />
                   {createErrors.identificacion && <p className="text-xs text-destructive">{createErrors.identificacion}</p>}
                 </div>
               </div>
+              {terceroForm.tipoId === "NIT" ? (
+                <div className="space-y-1">
+                  <Label>Razón Social *</Label>
+                  <Input
+                    value={terceroForm.razonSocial ?? ""}
+                    onChange={(e) => { setTerceroForm({ ...terceroForm, razonSocial: e.target.value }); setCreateErrors((p) => ({ ...p, razonSocial: "" })); }}
+                    placeholder="Razón social de la empresa"
+                    className={createErrors.razonSocial ? "border-destructive" : ""}
+                  />
+                  {createErrors.razonSocial && <p className="text-xs text-destructive">{createErrors.razonSocial}</p>}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Nombres *</Label>
+                    <Input
+                      value={terceroForm.nombres}
+                      onChange={(e) => { setTerceroForm({ ...terceroForm, nombres: e.target.value }); setCreateErrors((p) => ({ ...p, nombres: "" })); }}
+                      placeholder="Nombres"
+                      className={createErrors.nombres ? "border-destructive" : ""}
+                    />
+                    {createErrors.nombres && <p className="text-xs text-destructive">{createErrors.nombres}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Apellidos *</Label>
+                    <Input
+                      value={terceroForm.apellidos}
+                      onChange={(e) => { setTerceroForm({ ...terceroForm, apellidos: e.target.value }); setCreateErrors((p) => ({ ...p, apellidos: "" })); }}
+                      placeholder="Apellidos"
+                      className={createErrors.apellidos ? "border-destructive" : ""}
+                    />
+                    {createErrors.apellidos && <p className="text-xs text-destructive">{createErrors.apellidos}</p>}
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
-                <Label>Usuario Cellvi *</Label>
+                <Label>
+                  Usuario Cellvi {requiereUsuarioCellvi(terceroForm.roles ?? []) ? "*" : "(opcional)"}
+                </Label>
                 <Input
                   value={terceroForm.usuarioCellvi}
                   onChange={(e) => { setTerceroForm({ ...terceroForm, usuarioCellvi: e.target.value }); setCreateErrors((p) => ({ ...p, usuarioCellvi: "" })); }}
@@ -1249,6 +1290,11 @@ export default function Usuarios() {
                   className={createErrors.usuarioCellvi ? "border-destructive" : ""}
                 />
                 {createErrors.usuarioCellvi && <p className="text-xs text-destructive">{createErrors.usuarioCellvi}</p>}
+                {!requiereUsuarioCellvi(terceroForm.roles ?? []) && (
+                  <p className="text-xs text-muted-foreground">
+                    Solo los proveedores pueden quedar sin Usuario Cellvi.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Teléfono</Label>
@@ -1342,24 +1388,6 @@ export default function Usuarios() {
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Nombres *</Label>
-                  <Input
-                    value={editForm.nombres}
-                    onChange={(e) => setEditForm({ ...editForm, nombres: e.target.value })}
-                    placeholder="Nombres"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Apellidos *</Label>
-                  <Input
-                    value={editForm.apellidos}
-                    onChange={(e) => setEditForm({ ...editForm, apellidos: e.target.value })}
-                    placeholder="Apellidos"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
                   <Label>Tipo Documento *</Label>
                   <Select
                     value={editForm.tipoId}
@@ -1369,30 +1397,64 @@ export default function Usuarios() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="CC">CC - Cédula</SelectItem>
-                      <SelectItem value="CE">CE - Cédula Extranjería</SelectItem>
-                      <SelectItem value="NIT">NIT</SelectItem>
-                      <SelectItem value="TI">TI - Tarjeta Identidad</SelectItem>
-                      <SelectItem value="PA">PA - Pasaporte</SelectItem>
+                      {TIPO_ID_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Identificación *</Label>
+                  <Label>{editForm.tipoId === "NIT" ? "NIT *" : "Identificación *"}</Label>
                   <Input
                     value={editForm.identificacion}
                     onChange={(e) => setEditForm({ ...editForm, identificacion: e.target.value })}
-                    placeholder="Número de documento"
+                    placeholder={editForm.tipoId === "NIT" ? "Ej: 900123456-7" : "Número de documento"}
                   />
                 </div>
               </div>
+              {editForm.tipoId === "NIT" ? (
+                <div className="space-y-2">
+                  <Label>Razón Social *</Label>
+                  <Input
+                    value={editForm.razonSocial ?? ""}
+                    onChange={(e) => setEditForm({ ...editForm, razonSocial: e.target.value })}
+                    placeholder="Razón social de la empresa"
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Nombres *</Label>
+                    <Input
+                      value={editForm.nombres}
+                      onChange={(e) => setEditForm({ ...editForm, nombres: e.target.value })}
+                      placeholder="Nombres"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Apellidos *</Label>
+                    <Input
+                      value={editForm.apellidos}
+                      onChange={(e) => setEditForm({ ...editForm, apellidos: e.target.value })}
+                      placeholder="Apellidos"
+                    />
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
-                <Label>Usuario Cellvi *</Label>
+                <Label>
+                  Usuario Cellvi {requiereUsuarioCellvi(editForm.roles ?? []) ? "*" : "(opcional)"}
+                </Label>
                 <Input
                   value={editForm.usuarioCellvi}
                   onChange={(e) => setEditForm({ ...editForm, usuarioCellvi: e.target.value })}
                   placeholder="Usuario Cellvi"
                 />
+                {!requiereUsuarioCellvi(editForm.roles ?? []) && (
+                  <p className="text-xs text-muted-foreground">
+                    Solo los proveedores pueden quedar sin Usuario Cellvi.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Teléfono</Label>
@@ -1444,10 +1506,11 @@ export default function Usuarios() {
                 disabled={
                   editTerceroMutation.isPending ||
                   editPhoto.uploading ||
-                  !editForm.identificacion ||
-                  !editForm.nombres ||
-                  !editForm.apellidos ||
-                  !editForm.usuarioCellvi ||
+                  !editForm.identificacion.trim() ||
+                  (editForm.tipoId === "NIT"
+                    ? !(editForm.razonSocial ?? "").trim()
+                    : !editForm.nombres.trim() || !editForm.apellidos.trim()) ||
+                  (requiereUsuarioCellvi(editForm.roles ?? []) && !editForm.usuarioCellvi.trim()) ||
                   (isAdmin && !editForm.empresaId)
                 }
               >
@@ -1465,7 +1528,7 @@ export default function Usuarios() {
               <AlertDialogTitle>Eliminar Tercero</AlertDialogTitle>
               <AlertDialogDescription>
                 {viewingUser
-                  ? `¿Está seguro de que desea eliminar a ${viewingUser.nombres} ${viewingUser.apellidos} (${viewingUser.tipoId} ${viewingUser.identificacion})? Esta acción no se puede deshacer.`
+                  ? `¿Está seguro de que desea eliminar a ${getTerceroNombre(viewingUser)} (${viewingUser.tipoId} ${viewingUser.identificacion})? Esta acción no se puede deshacer.`
                   : "Esta acción no se puede deshacer."}
               </AlertDialogDescription>
             </AlertDialogHeader>

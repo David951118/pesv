@@ -63,6 +63,21 @@ export function roleLabel(token: string): string {
   return opt?.label ?? token;
 }
 
+// Regla de negocio: todo tercero debe quedar enlazado a un Usuario Cellvi,
+// salvo el proveedor (empresa externa que no entra a la plataforma). El API
+// solo exige el usuario para los roles que inician sesión, porque el módulo
+// FUEC crea contratantes (Cliente) sin usuario; esta regla más estricta se
+// aplica aquí, en el formulario de Usuarios.
+export const ROLES_SIN_USUARIO_CELLVI = ["PROVEEDOR"];
+
+/**
+ * Indica si la lista unificada de roles obliga a diligenciar Usuario Cellvi:
+ * cualquier rol distinto de proveedor (incluidos los ROLE_* de acceso).
+ */
+export function requiereUsuarioCellvi(values: string[]): boolean {
+  return (values ?? []).some((v) => !ROLES_SIN_USUARIO_CELLVI.includes(v));
+}
+
 /** Separa la lista unificada en roles de negocio y roles de sistema (ROLE_*). */
 export function splitRoles(values: string[]): {
   roles: string[];
