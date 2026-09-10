@@ -21,7 +21,7 @@ export interface ApiRndcVehiculo {
   fechaMatricula?: string;
   propietario?: string | ApiRndcTercero;
   empresaAfiliadora?: string | ApiRndcEmpresa;
-  estado: 'ACTIVO' | 'MANTENIMIENTO' | 'INACTIVO' | 'RETIRADO';
+  estado: 'ACTIVO' | 'MANTENIMIENTO' | 'INACTIVO' | 'RETIRADO' | 'INMOVILIZADO';
   kilometrajeActual?: number;
   ultimaActualizacionKm?: string;
   mantenimientos?: {
@@ -738,6 +738,10 @@ export interface ApiRndcRankingVehiculo {
   costoManoDeObra: number;
   costoRepuestos: number;
   costoCombustible: number;
+  /** valor + grúa + patios de las multas del periodo (sin anuladas) */
+  costoMultas: number;
+  multas: number;
+  inmovilizaciones: number;
   costoTotal: number;
   kmRecorridos: number;
   costoPorKm: number | null;
@@ -751,6 +755,8 @@ export interface ApiRndcKpisGerenciales {
     total: number;
     disponibles: number;
     enMantenimiento: number;
+    /** vehículos retenidos por la autoridad (multa con inmovilización vigente) */
+    inmovilizados: number;
     disponibilidad: number | null;
   };
   mantenimiento: {
@@ -760,12 +766,210 @@ export interface ApiRndcKpisGerenciales {
     pctPreventivo: number | null;
     pctCorrectivo: number | null;
   };
+  multas: {
+    total: number;
+    pendientes: number;
+    impugnadas: number;
+    pagadas: number;
+    anuladas: number;
+    valorPorPagar: number;
+    costoTotal: number;
+    inmovilizaciones: number;
+    vehiculosInmovilizados: number;
+  };
   costos: {
     costoTotalFlota: number;
+    costoMantenimientoFlota: number;
+    costoCombustibleFlota: number;
+    costoMultasFlota: number;
     kmTotalFlota: number;
     costoPorKmGlobal: number | null;
   };
   rankingVehiculos: ApiRndcRankingVehiculo[];
+}
+
+// ─── Multas / comparendos ───
+
+/** Archivo ya subido a S3 (metadatos que viajan al backend) */
+export interface ApiRndcArchivo {
+  _id?: string;
+  url: string;
+  key: string;
+  nombre?: string;
+  mimeType?: string;
+  tamano?: number | null;
+  subidoPor?: string;
+  fecha?: string;
+}
+
+export type ApiRndcMultaEstado = 'PENDIENTE' | 'PAGADA' | 'IMPUGNADA' | 'ANULADA';
+export type ApiRndcInmovilizacionEstado =
+  | 'NO_APLICA'
+  | 'INMOVILIZADO'
+  | 'CORRECCION_SUBIDA'
+  | 'LEVANTADA';
+export type ApiRndcMultaResponsable = 'EMPRESA' | 'CONDUCTOR' | 'PROPIETARIO';
+
+export interface ApiRndcMultaConductorNoRegistrado {
+  nombres?: string;
+  apellidos?: string;
+  tipoId?: string;
+  identificacion?: string;
+  telefono?: string;
+  licencia?: string;
+}
+
+export interface ApiRndcMultaInmovilizacion {
+  aplica: boolean;
+  estado: ApiRndcInmovilizacionEstado;
+  fechaInicio?: string | null;
+  patio?: string;
+  motivo?: string;
+  costoGrua?: number;
+  costoPatios?: number;
+  estadoVehiculoAnterior?: string;
+  correccion?: {
+    descripcion?: string;
+    evidencias?: ApiRndcArchivo[];
+    fecha?: string;
+    subidoPor?: string;
+    subidoPorNombre?: string;
+  };
+  fechaLevantamiento?: string | null;
+  levantadaPor?: string;
+  observacionesLevantamiento?: string;
+  levantadaForzada?: boolean;
+}
+
+export interface ApiRndcMultaHistorialEntry {
+  fecha: string;
+  usuario?: string;
+  accion: string;
+  detalle?: string;
+}
+
+export interface ApiRndcMulta {
+  _id: string;
+  numero: string;
+  vehiculo: {
+    _id: string;
+    placa: string;
+    numeroInterno?: string;
+    marca?: string;
+    linea?: string;
+    modelo?: number;
+    estado?: string;
+    empresaAfiliadora?: string;
+  } | null;
+  placa: string;
+  empresa?: string | null;
+  conductor: {
+    _id: string;
+    nombres?: string;
+    apellidos?: string;
+    identificacion?: string;
+    tipoId?: string;
+    contacto?: { telefono?: string; email?: string };
+  } | null;
+  conductorRegistrado: boolean;
+  conductorNoRegistrado?: ApiRndcMultaConductorNoRegistrado;
+  fecha: string;
+  numeroComparendo?: string;
+  codigoInfraccion?: string;
+  descripcion: string;
+  autoridad?: string;
+  agente?: string;
+  ciudad?: string;
+  lugar?: string;
+  valor: number;
+  fechaLimitePago?: string | null;
+  responsable: ApiRndcMultaResponsable;
+  estado: ApiRndcMultaEstado;
+  pago?: {
+    valorPagado?: number;
+    fechaPago?: string | null;
+    comprobante?: ApiRndcArchivo | null;
+    observaciones?: string;
+    registradoPor?: string;
+  };
+  impugnacion?: { motivo?: string; fecha?: string; registradoPor?: string };
+  anulacion?: { motivo?: string; fecha?: string; registradoPor?: string };
+  fotos: ApiRndcArchivo[];
+  inmovilizacion: ApiRndcMultaInmovilizacion;
+  /** valor + grúa + patios */
+  costoTotal: number;
+  observaciones?: string;
+  registradoPor?: string;
+  registradoPorNombre?: string;
+  historial: ApiRndcMultaHistorialEntry[];
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiRndcMultaCreatePayload {
+  vehiculo: string;
+  conductor?: string | null;
+  conductorNoRegistrado?: ApiRndcMultaConductorNoRegistrado | null;
+  fecha: string;
+  numeroComparendo?: string;
+  codigoInfraccion?: string;
+  descripcion: string;
+  autoridad?: string;
+  agente?: string;
+  ciudad?: string;
+  lugar?: string;
+  valor: number;
+  fechaLimitePago?: string | null;
+  responsable?: ApiRndcMultaResponsable;
+  fotos?: ApiRndcArchivo[];
+  inmovilizacion?: {
+    aplica: boolean;
+    fechaInicio?: string | null;
+    patio?: string;
+    motivo?: string;
+    costoGrua?: number | null;
+    costoPatios?: number | null;
+  };
+  observaciones?: string;
+}
+
+export type ApiRndcMultaUpdatePayload = Partial<Omit<ApiRndcMultaCreatePayload, 'vehiculo' | 'fotos'>>;
+
+export interface ApiRndcMultaPagoPayload {
+  valorPagado: number;
+  fechaPago?: string | null;
+  comprobante?: ApiRndcArchivo | null;
+  observaciones?: string;
+}
+
+export interface ApiRndcMultaResumen {
+  total: number;
+  valorTotal: number;
+  costoTotal: number;
+  pagado: number;
+  porPagar: number;
+  pendientes: number;
+  impugnadas: number;
+  pagadas: number;
+  anuladas: number;
+  conInmovilizacion: number;
+  inmovilizacionesActivas: number;
+  vehiculosInmovilizados: number;
+  inmovilizadas: Array<{
+    _id: string;
+    numero: string;
+    placa: string;
+    fecha: string;
+    descripcion?: string;
+    vehiculo: { _id: string; placa: string; numeroInterno?: string; marca?: string; linea?: string } | null;
+    inmovilizacion: {
+      estado: ApiRndcInmovilizacionEstado;
+      fechaInicio?: string | null;
+      patio?: string;
+      motivo?: string;
+    };
+  }>;
 }
 
 // ─── Paginated Response ───

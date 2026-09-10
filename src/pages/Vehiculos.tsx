@@ -77,7 +77,10 @@ import { KM_FUENTE_LABELS } from "@/components/operacion/operacion.helpers";
 const ITEMS_PER_PAGE = 10;
 
 const COMBUSTIBLE_OPTIONS = ["GASOLINA", "DIESEL", "GAS", "HIBRIDO", "ELECTRICO"];
-const ESTADO_OPTIONS = ["ACTIVO", "MANTENIMIENTO", "INACTIVO", "RETIRADO"];
+// INMOVILIZADO lo pone y lo quita el módulo Multas (inmovilización por la
+// autoridad); aquí solo se muestra y se filtra, no se asigna a mano.
+const ESTADO_OPTIONS = ["ACTIVO", "MANTENIMIENTO", "INACTIVO", "RETIRADO", "INMOVILIZADO"];
+const ESTADO_OPTIONS_FORM = ESTADO_OPTIONS.filter((e) => e !== "INMOVILIZADO");
 const CARROCERIA_OPTIONS = ["CERRADA", "ABIERTA", "FURGON", "VOLQUETA", "PLATAFORMA"];
 const MODALIDAD_OPTIONS = ["ESPECIAL", "PUBLICO", "PRIVADO", "CARGA", "MIXTO"];
 
@@ -119,6 +122,7 @@ function getEstadoBadgeVariant(estado: string) {
     case "MANTENIMIENTO": return "secondary";
     case "INACTIVO": return "outline";
     case "RETIRADO": return "destructive";
+    case "INMOVILIZADO": return "destructive";
     default: return "secondary";
   }
 }
@@ -1163,16 +1167,24 @@ export default function Vehiculos() {
                   <Select
                     value={vehiculoForm.estado}
                     onValueChange={(value) => setVehiculoForm({ ...vehiculoForm, estado: value })}
+                    disabled={vehiculoForm.estado === "INMOVILIZADO"}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {ESTADO_OPTIONS.map((e) => (
-                        <SelectItem key={e} value={e}>{e}</SelectItem>
+                      {(vehiculoForm.estado === "INMOVILIZADO" ? ESTADO_OPTIONS : ESTADO_OPTIONS_FORM).map((e) => (
+                        <SelectItem key={e} value={e} disabled={e === "INMOVILIZADO"}>
+                          {e}{e === "INMOVILIZADO" ? " (se gestiona desde Multas)" : ""}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {vehiculoForm.estado === "INMOVILIZADO" && (
+                    <p className="text-xs text-destructive">
+                      Vehículo inmovilizado por una multa. Se libera al levantar la inmovilización en el módulo Multas.
+                    </p>
+                  )}
                 </div>
               </div>
               {isAdmin && !editingVehiculo && (

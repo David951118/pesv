@@ -81,6 +81,7 @@ function getEstadoBadgeVariant(estado: string) {
     case "MANTENIMIENTO": return "secondary";
     case "INACTIVO": return "outline";
     case "RETIRADO": return "destructive";
+    case "INMOVILIZADO": return "destructive";
     default: return "secondary";
   }
 }

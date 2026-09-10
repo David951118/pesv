@@ -63,9 +63,11 @@ import {
   Plus,
   FileText,
   AlertTriangle,
+  History,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRShareModal } from "@/components/preoperativas/QRShareModal";
 import { PreopSeguimiento } from "@/components/preoperativas/PreopSeguimiento";
@@ -74,6 +76,7 @@ import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { labelForItem } from "@/lib/preopItems";
+import { getVehiculosList } from "@/services/apirndc";
 
 // ── Types ──
 
@@ -147,6 +150,16 @@ function countFallas(section?: Record<string, { estado: string }>): number {
   return Object.values(section).filter((v) => v.estado === "MALO").length;
 }
 
+/** Día local (Colombia) en formato YYYY-MM-DD. No usar toISOString: corre un día en UTC. */
+function hoyLocal(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
+/** Tope de registros que se piden al servidor en una sola consulta */
+const LIMITE_CONSULTA = 1000;
+/** Días hacia atrás del rango por defecto cuando no hay placa ni fechas */
+const DIAS_POR_DEFECTO = 30;
+
 // ── Main Component ──
 
 export default function Preoperativas() {
@@ -157,6 +170,7 @@ export default function Preoperativas() {
   const puedeGestionar = role !== "mecanico";
   const [viewMode, setViewMode] = useState<ViewMode>("lista");
   const [searchTerm, setSearchTerm] = useState("");
+  const [placaFiltro, setPlacaFiltro] = useState("todas");
   const [filtroEstado, setFiltroEstado] = useState("todos");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
@@ -176,18 +190,68 @@ export default function Preoperativas() {
   const [extraVehiculoId, setExtraVehiculoId] = useState("");
   const [extraMotivo, setExtraMotivo] = useState("");
 
-  const { data: preoperacionales, isLoading } = useQuery({
-    queryKey: ["preoperacionales-admin"],
+  // Rango por defecto: sin placa ni fechas se muestran los últimos 30 días.
+  // Con una placa seleccionada y sin fechas se trae TODO su historial.
+  const rangoPorDefecto = placaFiltro === "todas" && !fechaDesde && !fechaHasta;
+  const fechaDesdeEfectiva = rangoPorDefecto
+    ? format(subDays(new Date(), DIAS_POR_DEFECTO), "yyyy-MM-dd")
+    : fechaDesde;
+  const fechaHastaEfectiva = rangoPorDefecto ? "" : fechaHasta;
+
+  // Los filtros de placa, estado y fechas van al servidor: antes el listado
+  // llegaba con el límite por defecto (20) y el historial nunca aparecía.
+  const { data: preopRes, isLoading } = useQuery({
+    queryKey: [
+      "preoperacionales-admin",
+      { placa: placaFiltro, estado: filtroEstado, desde: fechaDesdeEfectiva, hasta: fechaHastaEfectiva },
+    ],
     queryFn: async () => {
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales`, {
+      const params = new URLSearchParams({ limit: String(LIMITE_CONSULTA) });
+      if (placaFiltro !== "todas") params.set("placa", placaFiltro);
+      if (filtroEstado !== "todos") params.set("estadoGeneral", filtroEstado);
+      if (fechaDesdeEfectiva) params.set("fechaDesde", fechaDesdeEfectiva);
+      if (fechaHastaEfectiva) params.set("fechaHasta", fechaHastaEfectiva);
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales?${params}`, {
         headers: { Authorization: `Bearer ${bearerToken}` },
       });
       if (!res.ok) throw new Error("Error al cargar preoperacionales");
       const json = await res.json();
       const list = json.data || json;
-      return (Array.isArray(list) ? list : []) as PreoperacionalAPI[];
+      const items = (Array.isArray(list) ? list : []) as PreoperacionalAPI[];
+      return { items, total: Number(json.pagination?.total ?? items.length) };
     },
     enabled: !!bearerToken,
+  });
+  const preoperacionales = preopRes?.items;
+  const totalServidor = preopRes?.total ?? 0;
+
+  // Placas para el selector: listado de vehículos del scope del usuario. Si el
+  // rol no puede consultar /vehiculos/list (p. ej. auditor) se completa con las
+  // placas de las inspecciones cargadas.
+  const { data: vehiculosListRes } = useQuery({
+    queryKey: ["apirndc-vehiculos-list"],
+    queryFn: ({ signal }) => getVehiculosList(signal),
+    enabled: !!bearerToken,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  // Vehículos con preop HOY (para "Preop extra"): consulta aparte, porque el
+  // listado principal puede estar filtrado a otra placa o a fechas pasadas.
+  const { data: preopsHoy, isLoading: loadingHoy } = useQuery({
+    queryKey: ["preoperacionales-admin", "hoy"],
+    queryFn: async () => {
+      const params = new URLSearchParams({ fechaDesde: hoyLocal(), limit: "500" });
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales?${params}`, {
+        headers: { Authorization: `Bearer ${bearerToken}` },
+      });
+      if (!res.ok) throw new Error("Error al cargar preoperacionales de hoy");
+      const json = await res.json();
+      const list = json.data || json;
+      return (Array.isArray(list) ? list : []) as PreoperacionalAPI[];
+    },
+    enabled: !!bearerToken && showHabilitarDialog,
+    staleTime: 60_000,
   });
 
   const deleteMutation = useMutation({
@@ -229,10 +293,10 @@ export default function Preoperativas() {
 
   // Today's vehicles for habilitar extra
   const todayVehiculos = useMemo(() => {
-    if (!preoperacionales) return [];
-    const today = new Date().toISOString().slice(0, 10);
+    if (!preopsHoy) return [];
+    const today = hoyLocal();
     const seen = new Map<string, string>();
-    for (const p of preoperacionales) {
+    for (const p of preopsHoy) {
       const pDate = formatDateShort(p.createdAt);
       if (pDate !== today) continue;
       const vId = typeof p.vehiculo === "object" ? p.vehiculo?._id : p.vehiculo;
@@ -240,28 +304,54 @@ export default function Preoperativas() {
       if (vId && !seen.has(vId)) seen.set(vId, placa);
     }
     return Array.from(seen.entries()).map(([id, placa]) => ({ id, placa }));
-  }, [preoperacionales]);
+  }, [preopsHoy]);
 
-  // Filter
+  // Filtro en cliente: solo el texto libre (placa/conductor). Estado, placa y
+  // fechas ya vienen filtrados por el servidor.
   const filtered = useMemo(() => {
     if (!preoperacionales) return [];
+    const s = searchTerm.trim().toLowerCase();
+    if (!s) return preoperacionales;
     return preoperacionales.filter((p) => {
-      const s = searchTerm.toLowerCase();
       const placa = getPlaca(p).toLowerCase();
       const conductor = getConductor(p).toLowerCase();
-      const matchSearch = !s || placa.includes(s) || conductor.includes(s);
-      const matchEstado = filtroEstado === "todos" || p.estadoGeneral === filtroEstado;
-
-      let matchFecha = true;
-      if (fechaDesde || fechaHasta) {
-        const pDate = formatDateShort(p.createdAt);
-        if (fechaDesde && pDate < fechaDesde) matchFecha = false;
-        if (fechaHasta && pDate > fechaHasta) matchFecha = false;
-      }
-
-      return matchSearch && matchEstado && matchFecha;
+      return placa.includes(s) || conductor.includes(s);
     });
-  }, [preoperacionales, searchTerm, filtroEstado, fechaDesde, fechaHasta]);
+  }, [preoperacionales, searchTerm]);
+
+  const hayFiltros =
+    placaFiltro !== "todas" || fechaDesde || fechaHasta || filtroEstado !== "todos" || searchTerm;
+
+  const limpiarFiltros = () => {
+    setSearchTerm("");
+    setPlacaFiltro("todas");
+    setFiltroEstado("todos");
+    setFechaDesde("");
+    setFechaHasta("");
+  };
+
+  /** Salta al historial completo de una placa desde la vista por vehículo */
+  const verHistorial = (placa: string, key: string) => {
+    setPlacaFiltro(placa);
+    setFechaDesde("");
+    setFechaHasta("");
+    setViewMode("vehiculo");
+    setExpandedVehiculo(key);
+  };
+
+  // Descripción del encabezado según el filtro activo
+  const descripcionHeader = (() => {
+    const n = filtered.length;
+    if (placaFiltro !== "todas") {
+      const rango =
+        fechaDesde || fechaHasta
+          ? ` · ${fechaDesde || "inicio"} → ${fechaHasta || "hoy"}`
+          : " · historial completo";
+      return `Historial de ${placaFiltro} · ${n} inspecciones${rango}`;
+    }
+    if (rangoPorDefecto) return `${n} inspecciones · últimos ${DIAS_POR_DEFECTO} días`;
+    return `${n} inspecciones · ${fechaDesde || "inicio"} → ${fechaHasta || "hoy"}`;
+  })();
 
   // Group by vehiculo for "por vehículo" view
   const groupedByVehiculo = useMemo(() => {
@@ -282,6 +372,15 @@ export default function Preoperativas() {
     for (const p of preoperacionales || []) set.add(getPlaca(p));
     return Array.from(set).sort();
   }, [preoperacionales]);
+
+  // Placas del selector de filtro: flota del usuario ∪ placas cargadas
+  const placasSelector = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of vehiculosListRes?.data || []) if (v.placa) set.add(v.placa);
+    for (const p of uniquePlacas) if (p && p !== "—") set.add(p);
+    if (placaFiltro !== "todas") set.add(placaFiltro);
+    return Array.from(set).sort();
+  }, [vehiculosListRes, uniquePlacas, placaFiltro]);
 
   // ── Filtered data for export ──
   const getExportData = () => {
@@ -441,7 +540,7 @@ export default function Preoperativas() {
       <PageContainer>
         <ModuleHeader
           title="Preoperacionales"
-          description={`${filtered.length} inspecciones registradas`}
+          description={descripcionHeader}
           icon={ClipboardCheck}
           iconVariant="primary"
         />
@@ -454,7 +553,7 @@ export default function Preoperativas() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por placa o conductor..."
+                  placeholder="Buscar por conductor o placa en los resultados..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -525,8 +624,22 @@ export default function Preoperativas() {
               </div>
             </div>
 
-            {/* Row 2: filters */}
+            {/* Row 2: filters (se aplican en el servidor) */}
             <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-muted-foreground" />
+                <Select value={placaFiltro} onValueChange={setPlacaFiltro}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Placa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas las placas</SelectItem>
+                    {placasSelector.map((placa) => (
+                      <SelectItem key={placa} value={placa}>{placa}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <Select value={filtroEstado} onValueChange={setFiltroEstado}>
@@ -558,14 +671,40 @@ export default function Preoperativas() {
                   className="w-40"
                 />
               </div>
-              {(fechaDesde || fechaHasta || filtroEstado !== "todos" || searchTerm) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => { setSearchTerm(""); setFiltroEstado("todos"); setFechaDesde(""); setFechaHasta(""); }}
-                >
+              {hayFiltros && (
+                <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
                   Limpiar filtros
                 </Button>
+              )}
+            </div>
+
+            {/* Row 3: aviso del rango y conteo del servidor */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {rangoPorDefecto && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 px-2.5 py-1">
+                  <Info className="h-3.5 w-3.5" />
+                  Mostrando los últimos {DIAS_POR_DEFECTO} días — filtra por placa o fechas para ver el historial completo
+                </span>
+              )}
+              {placaFiltro !== "todas" && !fechaDesde && !fechaHasta && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-2.5 py-1">
+                  <History className="h-3.5 w-3.5" />
+                  Historial completo de {placaFiltro}
+                </span>
+              )}
+              {!isLoading && preoperacionales && (
+                <span>
+                  Mostrando {filtered.length} de {totalServidor} inspecciones
+                  {searchTerm && preoperacionales.length !== filtered.length
+                    ? ` (${preoperacionales.length} cargadas)`
+                    : ""}
+                </span>
+              )}
+              {totalServidor > LIMITE_CONSULTA && (
+                <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Solo se cargaron las {LIMITE_CONSULTA} más recientes: acota por fechas para ver el resto.
+                </span>
               )}
             </div>
           </div>
@@ -587,7 +726,16 @@ export default function Preoperativas() {
         ) : viewMode === "lista" ? (
           <ListView items={filtered} onView={setViewingPreop} onShareQR={setQrPreop} onDelete={(id) => deleteMutation.mutate(id)} />
         ) : (
-          <VehiculoView groups={groupedByVehiculo} onView={setViewingPreop} onShareQR={setQrPreop} onDelete={(id) => deleteMutation.mutate(id)} expandedVehiculo={expandedVehiculo} setExpandedVehiculo={setExpandedVehiculo} />
+          <VehiculoView
+            groups={groupedByVehiculo}
+            onView={setViewingPreop}
+            onShareQR={setQrPreop}
+            onDelete={(id) => deleteMutation.mutate(id)}
+            expandedVehiculo={expandedVehiculo}
+            setExpandedVehiculo={setExpandedVehiculo}
+            placaSeleccionada={placaFiltro !== "todas" ? placaFiltro : null}
+            onVerHistorial={verHistorial}
+          />
         )}
 
         {/* Detail dialog */}
@@ -675,7 +823,9 @@ export default function Preoperativas() {
                       <SelectItem key={v.id} value={v.id}>{v.placa}</SelectItem>
                     ))}
                     {todayVehiculos.length === 0 && (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">No hay vehículos con preop hoy</div>
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        {loadingHoy ? "Cargando vehículos de hoy..." : "No hay vehículos con preop hoy"}
+                      </div>
                     )}
                   </SelectContent>
                 </Select>
@@ -811,6 +961,8 @@ function VehiculoView({
   onDelete,
   expandedVehiculo,
   setExpandedVehiculo,
+  placaSeleccionada,
+  onVerHistorial,
 }: {
   groups: [string, { placa: string; items: PreoperacionalAPI[] }][];
   onView: (p: PreoperacionalAPI) => void;
@@ -818,6 +970,10 @@ function VehiculoView({
   onDelete: (id: string) => void;
   expandedVehiculo: string | null;
   setExpandedVehiculo: (v: string | null) => void;
+  /** Placa filtrada en el servidor (se muestra su historial completo) */
+  placaSeleccionada?: string | null;
+  /** Salta al historial completo de la placa (filtro en el servidor) */
+  onVerHistorial?: (placa: string, key: string) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -826,6 +982,15 @@ function VehiculoView({
         const aprobados = items.filter((i) => i.estadoGeneral === "APROBADO").length;
         const novedades = items.filter((i) => i.estadoGeneral === "NOVEDAD").length;
         const rechazados = items.filter((i) => i.estadoGeneral === "RECHAZADO").length;
+        const pctAprobadas = items.length ? Math.round((aprobados / items.length) * 100) : 0;
+        // El servidor devuelve fecha desc: la primera es la más reciente
+        const ordenados = [...items].sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+        );
+        const ultima = ordenados[0];
+        const primera = ordenados[ordenados.length - 1];
+        const ultimoKm = ordenados.find((i) => i.kilometraje != null)?.kilometraje;
+        const esHistorial = placaSeleccionada === placa;
 
         return (
           <div key={key} className="bg-card border rounded-lg overflow-hidden">
@@ -833,7 +998,7 @@ function VehiculoView({
             <button
               type="button"
               onClick={() => setExpandedVehiculo(isExpanded ? null : key)}
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-muted/30 transition-colors text-left"
+              className="w-full px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/30 transition-colors text-left"
             >
               <div className="flex items-center gap-3">
                 {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
@@ -841,11 +1006,42 @@ function VehiculoView({
                   <Truck className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-semibold text-foreground">{placa}</p>
-                  <p className="text-xs text-muted-foreground">{items.length} inspecciones</p>
+                  <p className="font-semibold text-foreground flex items-center gap-2">
+                    {placa}
+                    {esHistorial && (
+                      <Badge variant="outline" className="text-[10px] font-normal gap-1">
+                        <History className="h-3 w-3" /> Historial completo
+                      </Badge>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {items.length} inspecciones · {pctAprobadas}% aprobadas
+                    {primera?.createdAt && ultima?.createdAt && (
+                      <>
+                        {" · "}
+                        {format(new Date(primera.createdAt), "dd MMM yyyy", { locale: es })}
+                        {" → "}
+                        {format(new Date(ultima.createdAt), "dd MMM yyyy", { locale: es })}
+                      </>
+                    )}
+                    {ultimoKm != null && ` · último km ${ultimoKm.toLocaleString()}`}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {!esHistorial && onVerHistorial && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Ver todo el historial de esta placa"
+                    onClick={(e) => { e.stopPropagation(); onVerHistorial(placa, key); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onVerHistorial(placa, key); } }}
+                    className="inline-flex items-center gap-1 border rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    Ver historial
+                  </span>
+                )}
                 {aprobados > 0 && (
                   <span className="inline-flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium px-2 py-1 rounded-full">
                     {aprobados} aprobados
@@ -880,7 +1076,7 @@ function VehiculoView({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((p) => {
+                    {ordenados.map((p) => {
                       const totalFallas = countFallas(p.seccionDelantera) + countFallas(p.seccionMedia) + countFallas(p.seccionTrasera);
                       return (
                         <TableRow key={p._id}>

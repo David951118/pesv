@@ -37,6 +37,7 @@ import {
   Gauge,
   DollarSign,
   Search,
+  Gavel,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -122,6 +123,32 @@ interface ResumenVehiculo {
       fechaCierre?: string;
     }[];
   };
+  multas?: {
+    total: number;
+    pendientes: number;
+    inmovilizaciones: number;
+    costoTotal: number;
+    detalle: {
+      _id: string;
+      numero?: string;
+      fecha: string;
+      codigoInfraccion?: string;
+      descripcion?: string;
+      autoridad?: string;
+      valor: number;
+      costoTotal?: number;
+      estado: string;
+      responsable?: string;
+      inmovilizacion?: {
+        aplica?: boolean;
+        estado?: string;
+        fechaInicio?: string | null;
+        fechaLevantamiento?: string | null;
+      };
+      conductor?: { nombres?: string; apellidos?: string } | null;
+      conductorNoRegistrado?: { nombres?: string; apellidos?: string } | null;
+    }[];
+  };
   kilometraje: {
     dias: number;
     kmInicio: number | null;
@@ -133,6 +160,8 @@ interface ResumenVehiculo {
   costos: {
     combustible: number;
     mantenimiento: number;
+    /** valor + grúa + patios de las multas del periodo (sin anuladas) */
+    multas?: number;
     total: number;
     costoPorKm: number | null;
   };
@@ -158,6 +187,37 @@ function hoyISO(): string {
 const COLOR_APROBADO = "#22c55e";
 const COLOR_NOVEDAD = "#fbbf24";
 const COLOR_RECHAZADO = "#ef4444";
+
+const ESTADO_MULTA_BADGE: Record<string, string> = {
+  PENDIENTE: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  IMPUGNADA: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400",
+  PAGADA: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  ANULADA: "bg-muted text-muted-foreground",
+};
+
+const INMOVILIZACION_LABEL: Record<string, string> = {
+  NO_APLICA: "—",
+  INMOVILIZADO: "Inmovilizado",
+  CORRECCION_SUBIDA: "Corrección subida",
+  LEVANTADA: "Levantada",
+};
+
+const INMOVILIZACION_BADGE: Record<string, string> = {
+  INMOVILIZADO: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  CORRECCION_SUBIDA: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  LEVANTADA: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+};
+
+function nombreConductorMulta(m: {
+  conductor?: { nombres?: string; apellidos?: string } | null;
+  conductorNoRegistrado?: { nombres?: string; apellidos?: string } | null;
+}): string {
+  const c = m.conductor;
+  if (c && (c.nombres || c.apellidos)) return [c.nombres, c.apellidos].filter(Boolean).join(" ");
+  const n = m.conductorNoRegistrado;
+  if (n && (n.nombres || n.apellidos)) return `${[n.nombres, n.apellidos].filter(Boolean).join(" ")} (no registrado)`;
+  return "—";
+}
 
 const ESTADO_OT_BADGE: Record<string, string> = {
   ABIERTA: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
@@ -303,7 +363,7 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
           ) : (
             <div className="space-y-5">
               {/* KPIs */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 <KpiMini
                   icon={ClipboardCheck}
                   label="Preoperativas"
@@ -329,6 +389,13 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
                   hint={`${data.mantenimientos.total} OTs (${data.mantenimientos.cerradas} cerradas)`}
                 />
                 <KpiMini
+                  icon={Gavel}
+                  label="Multas"
+                  value={formatCOP(data.costos.multas ?? data.multas?.costoTotal ?? 0)}
+                  hint={`${data.multas?.total ?? 0} multas · ${data.multas?.pendientes ?? 0} pendientes${(data.multas?.inmovilizaciones ?? 0) > 0 ? ` · ${data.multas?.inmovilizaciones} inmov.` : ""}`}
+                  alerta={(data.multas?.pendientes ?? 0) > 0}
+                />
+                <KpiMini
                   icon={Gauge}
                   label="Recorrido real"
                   value={data.kilometraje.recorridoKm > 0 ? formatKm(data.kilometraje.recorridoKm) : "—"}
@@ -342,7 +409,7 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
                   icon={DollarSign}
                   label="Costo total"
                   value={formatCOP(data.costos.total)}
-                  hint={data.costos.costoPorKm != null ? `${formatCOP(data.costos.costoPorKm)}/km` : undefined}
+                  hint={`Comb. + mant. + multas${data.costos.costoPorKm != null ? ` · ${formatCOP(data.costos.costoPorKm)}/km` : ""}`}
                 />
               </div>
 
@@ -531,6 +598,74 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
                               {o.kilometraje != null ? formatKm(o.kilometraje) : "—"}
                             </TableCell>
                             <TableCell className="text-right">{formatCOP(o.costoTotal || 0)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* Multas / comparendos */}
+              <div className="border border-border rounded-lg p-4">
+                <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <Gavel className="h-4 w-4 text-primary" />
+                  Multas del período
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {data.multas?.total ?? 0} multas · {formatCOP(data.multas?.costoTotal ?? 0)}
+                    {(data.multas?.pendientes ?? 0) > 0 && ` · ${data.multas?.pendientes} pendientes`}
+                  </span>
+                </h4>
+                {!data.multas || data.multas.detalle.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Sin multas en el período
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nº</TableHead>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Infracción</TableHead>
+                          <TableHead>Conductor</TableHead>
+                          <TableHead>Autoridad</TableHead>
+                          <TableHead className="text-right">Valor</TableHead>
+                          <TableHead className="text-right">Costo total</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead>Inmovilización</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.multas.detalle.map((m) => (
+                          <TableRow key={m._id}>
+                            <TableCell className="font-medium whitespace-nowrap">{m.numero || "—"}</TableCell>
+                            <TableCell className="whitespace-nowrap">{m.fecha?.slice(0, 10)}</TableCell>
+                            <TableCell className="max-w-[260px] truncate" title={m.descripcion}>
+                              {m.codigoInfraccion ? `${m.codigoInfraccion} · ` : ""}
+                              {m.descripcion || "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{nombreConductorMulta(m)}</TableCell>
+                            <TableCell>{m.autoridad || "—"}</TableCell>
+                            <TableCell className="text-right">{formatCOP(m.valor)}</TableCell>
+                            <TableCell className="text-right">{formatCOP(m.costoTotal ?? m.valor)}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={ESTADO_MULTA_BADGE[m.estado] || ""}>
+                                {m.estado}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {m.inmovilizacion?.aplica ? (
+                                <Badge
+                                  variant="outline"
+                                  className={INMOVILIZACION_BADGE[m.inmovilizacion.estado || ""] || ""}
+                                >
+                                  {INMOVILIZACION_LABEL[m.inmovilizacion.estado || ""] || m.inmovilizacion.estado}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

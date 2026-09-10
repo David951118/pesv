@@ -43,6 +43,7 @@ import {
   DollarSign,
   Wallet,
   Trophy,
+  Gavel,
 } from "lucide-react";
 import type { ApiRndcKpisGerenciales } from "@/services/apirndc/apirndc.types";
 import { AnalisisVehiculo } from "@/components/estadisticas/AnalisisVehiculo";
@@ -170,6 +171,7 @@ const COLOR_CYAN = "#06b6d4"; // cyan-500
 const COLOR_PINK = "#ec4899"; // pink-500
 const COLOR_INFO = "#0ea5e9"; // sky-500
 const COLOR_GRAY = "#64748b";
+const COLOR_MULTAS = "#d97706"; // amber-600 (multas / comparendos)
 
 const CORRECCIONES_COLORS: Record<string, string> = {
   pendientes: COLOR_NOVEDAD,
@@ -387,6 +389,7 @@ export default function Estadisticas() {
       placa: v.placa,
       costoMantenimiento: v.costoMantenimiento,
       costoCombustible: v.costoCombustible,
+      costoMultas: v.costoMultas ?? 0,
     }));
   }, [kpis]);
 
@@ -882,8 +885,8 @@ export default function Estadisticas() {
 
             {kpisLoading ? (
               <div className="mt-6 space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {Array.from({ length: 5 }).map((_, i) => (
                     <Skeleton key={i} className="h-28 w-full rounded-lg" />
                   ))}
                 </div>
@@ -899,7 +902,7 @@ export default function Estadisticas() {
             ) : (
               <>
                 {/* KPI cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
                   <ContentCard className="border-l-4 border-l-green-600">
                     <div className="flex items-center justify-between">
                       <div>
@@ -910,7 +913,11 @@ export default function Estadisticas() {
                             : "—"}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {kpis.flota.disponibles}/{kpis.flota.total} disponibles
+                          {kpis.flota.disponibles}/{kpis.flota.total} disponibles · {kpis.flota.enMantenimiento} en mant.
+                          {" · "}
+                          <span className={(kpis.flota.inmovilizados ?? 0) > 0 ? "text-red-600 dark:text-red-400 font-semibold" : ""}>
+                            {kpis.flota.inmovilizados ?? 0} inmovilizados
+                          </span>
                         </p>
                       </div>
                       <div className="p-3 rounded-lg bg-green-100 text-green-600">
@@ -965,11 +972,37 @@ export default function Estadisticas() {
                           {formatCOP(kpis.costos.costoTotalFlota)}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {kpis.flota.enMantenimiento} en mantenimiento
+                          Mant. {formatCOP(kpis.costos.costoMantenimientoFlota ?? 0)} · Comb.{" "}
+                          {formatCOP(kpis.costos.costoCombustibleFlota ?? 0)} · Multas{" "}
+                          {formatCOP(kpis.costos.costoMultasFlota ?? 0)}
                         </p>
                       </div>
                       <div className="p-3 rounded-lg bg-red-100 text-red-600">
                         <Wallet className="h-6 w-6" />
+                      </div>
+                    </div>
+                  </ContentCard>
+
+                  {/* Multas del periodo (valor + grúa + patios), ya incluidas en el costo total */}
+                  <ContentCard className="border-l-4 border-l-amber-600">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Multas</p>
+                        <p className="text-2xl font-bold text-amber-600">
+                          {formatCOP(kpis.multas?.costoTotal ?? 0)}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {kpis.multas?.total ?? 0} multas · {kpis.multas?.pendientes ?? 0} pendientes por{" "}
+                          {formatCOP(kpis.multas?.valorPorPagar ?? 0)}
+                          {(kpis.multas?.vehiculosInmovilizados ?? 0) > 0 && (
+                            <span className="text-red-600 dark:text-red-400 font-semibold">
+                              {" "}· {kpis.multas.vehiculosInmovilizados} veh. inmovilizados
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-amber-100 text-amber-600">
+                        <Gavel className="h-6 w-6" />
                       </div>
                     </div>
                   </ContentCard>
@@ -1023,7 +1056,8 @@ export default function Estadisticas() {
                           />
                           <Legend wrapperStyle={{ color: axisColor }} />
                           <Bar dataKey="costoMantenimiento" stackId="a" fill={COLOR_PRIMARY} name="Mantenimiento" />
-                          <Bar dataKey="costoCombustible" stackId="a" fill={COLOR_PURPLE} name="Combustible" radius={[6, 6, 0, 0]} />
+                          <Bar dataKey="costoCombustible" stackId="a" fill={COLOR_PURPLE} name="Combustible" />
+                          <Bar dataKey="costoMultas" stackId="a" fill={COLOR_MULTAS} name="Multas" radius={[6, 6, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
@@ -1050,6 +1084,7 @@ export default function Estadisticas() {
                             <TableHead className="text-right">Órdenes (P/C)</TableHead>
                             <TableHead className="text-right">Mantenimiento</TableHead>
                             <TableHead className="text-right">Combustible</TableHead>
+                            <TableHead className="text-right">Multas</TableHead>
                             <TableHead className="text-right">Costo total</TableHead>
                             <TableHead className="text-right">Km recorridos</TableHead>
                             <TableHead className="text-right">Costo/km</TableHead>
@@ -1063,7 +1098,9 @@ export default function Estadisticas() {
                                 {[v.marca, v.linea].filter(Boolean).join(" / ") || "—"}
                               </TableCell>
                               <TableCell>
-                                <Badge variant="secondary">{v.estado || "—"}</Badge>
+                                <Badge variant={v.estado === "INMOVILIZADO" ? "destructive" : "secondary"}>
+                                  {v.estado || "—"}
+                                </Badge>
                               </TableCell>
                               <TableCell className="text-right">
                                 {v.ordenes}{" "}
@@ -1073,6 +1110,15 @@ export default function Estadisticas() {
                               </TableCell>
                               <TableCell className="text-right">{formatCOP(v.costoMantenimiento)}</TableCell>
                               <TableCell className="text-right">{formatCOP(v.costoCombustible)}</TableCell>
+                              <TableCell className="text-right">
+                                {formatCOP(v.costoMultas ?? 0)}
+                                {(v.multas ?? 0) > 0 && (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {v.multas} multa{v.multas === 1 ? "" : "s"}
+                                    {(v.inmovilizaciones ?? 0) > 0 ? ` · ${v.inmovilizaciones} inmov.` : ""}
+                                  </span>
+                                )}
+                              </TableCell>
                               <TableCell className="text-right font-bold">{formatCOP(v.costoTotal)}</TableCell>
                               <TableCell className="text-right">{formatKm(v.kmRecorridos)}</TableCell>
                               <TableCell className="text-right">

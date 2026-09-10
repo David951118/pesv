@@ -17,6 +17,7 @@ import {
   BarChart3,
   Wrench,
   Boxes,
+  Gavel,
   ChevronsUpDown,
 } from "lucide-react";
 import logoAsegurar from "@/assets/logos/triangulo1 png.png";
@@ -83,6 +84,7 @@ const navGroups: NavGroup[] = [
       { title: "FUEC", href: "/fuec", icon: FileText, roles: ["supervisor"] },
       { title: "Mapa", href: "/mapa", icon: Map, roles: ["supervisor"] },
       { title: "Operación", href: "/operacion", icon: Truck, roles: ["admin", "supervisor"] },
+      { title: "Multas", href: "/multas", icon: Gavel, roles: ["admin", "supervisor"] },
     ],
   },
   {

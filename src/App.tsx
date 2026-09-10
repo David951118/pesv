@@ -22,6 +22,7 @@ import Vehiculos from "./pages/Vehiculos";
 import Mantenimiento from "./pages/Mantenimiento";
 import Inventario from "./pages/Inventario";
 import Operacion from "./pages/Operacion";
+import Multas from "./pages/Multas";
 import Auditoria from "./pages/Auditoria";
 import Estadisticas from "./pages/Estadisticas";
 import Empresas from "./pages/Empresas";
@@ -155,6 +156,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
                   <Operacion />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/multas"
+              element={
+                <ProtectedRoute allowedRoles={["admin", "supervisor"]}>
+                  <Multas />
                 </ProtectedRoute>
               }
             />

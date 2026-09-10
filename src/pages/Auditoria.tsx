@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
@@ -67,6 +67,7 @@ import {
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { QRShareModal } from "@/components/preoperativas/QRShareModal";
+import { getVehiculosList } from "@/services/apirndc";
 
 // ── Types ──
 
@@ -617,23 +618,71 @@ function FuecDetailDialog({ contrato, onClose }: { contrato: ContratoFUEC | null
 
 function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerToken: string | null; isAdmin: boolean; queryClient: any }) {
   const [search, setSearch] = useState("");
+  const [placaFiltro, setPlacaFiltro] = useState("todas");
   const [estadoFilter, setEstadoFilter] = useState("todos");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const [page, setPage] = useState(1);
   const [viewingPreop, setViewingPreop] = useState<PreoperacionalAPI | null>(null);
   const [qrPreop, setQrPreop] = useState<PreoperacionalAPI | null>(null);
 
-  const { data: preoperacionales, isLoading } = useQuery({
-    queryKey: ["auditoria-preoperativas"],
+  // Placa, estado y fechas se filtran en el servidor (antes solo llegaban las
+  // 20 más recientes y el resto del historial nunca aparecía). Sin rango por
+  // defecto: la auditoría ve todo, paginado.
+  const filtros = { placa: placaFiltro, estado: estadoFilter, desde: fechaDesde, hasta: fechaHasta };
+  const { data: preopRes, isLoading } = useQuery({
+    queryKey: ["auditoria-preoperativas", filtros, page],
     queryFn: async () => {
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales`, {
+      const params = new URLSearchParams({ page: String(page), limit: String(ITEMS_PER_PAGE * 2) });
+      if (placaFiltro !== "todas") params.set("placa", placaFiltro);
+      if (estadoFilter !== "todos") params.set("estadoGeneral", estadoFilter);
+      if (fechaDesde) params.set("fechaDesde", fechaDesde);
+      if (fechaHasta) params.set("fechaHasta", fechaHasta);
+      const res = await fetch(`${getApiRndcBaseUrl()}/api/preoperacionales?${params}`, {
         headers: { Authorization: `Bearer ${bearerToken}` },
       });
       if (!res.ok) throw new Error("Error al cargar preoperacionales");
       const json = await res.json();
       const list = json.data || json;
-      return (Array.isArray(list) ? list : []) as PreoperacionalAPI[];
+      return {
+        items: (Array.isArray(list) ? list : []) as PreoperacionalAPI[],
+        pagination: (json.pagination || { page, total: 0, pages: 1 }) as { page: number; total: number; pages: number },
+      };
     },
     enabled: !!bearerToken,
   });
+  const preoperacionales = preopRes?.items;
+  const pagination = preopRes?.pagination;
+
+  // Placas del selector: flota del usuario; si el rol no puede consultar
+  // /vehiculos/list (p. ej. auditor) se completa con las placas cargadas.
+  const { data: vehiculosListRes } = useQuery({
+    queryKey: ["apirndc-vehiculos-list"],
+    queryFn: ({ signal }) => getVehiculosList(signal),
+    enabled: !!bearerToken,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const placasSelector = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of vehiculosListRes?.data || []) if (v.placa) set.add(v.placa);
+    for (const p of preoperacionales || []) {
+      const placa = typeof p.vehiculo === "object" ? p.vehiculo?.placa : p.vehiculo;
+      if (placa) set.add(String(placa));
+    }
+    if (placaFiltro !== "todas") set.add(placaFiltro);
+    return Array.from(set).sort();
+  }, [vehiculosListRes, preoperacionales, placaFiltro]);
+
+  const hayFiltros = placaFiltro !== "todas" || estadoFilter !== "todos" || fechaDesde || fechaHasta || search;
+  const limpiarFiltros = () => {
+    setSearch("");
+    setPlacaFiltro("todas");
+    setEstadoFilter("todos");
+    setFechaDesde("");
+    setFechaHasta("");
+    setPage(1);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -650,15 +699,15 @@ function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerTok
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Solo el texto libre se filtra en cliente (sobre la página cargada)
   const filtered = preoperacionales?.filter((p) => {
-    const s = search.toLowerCase();
+    const s = search.trim().toLowerCase();
+    if (!s) return true;
     const placa = typeof p.vehiculo === "object" ? p.vehiculo?.placa || "" : "";
     const conductor = typeof p.conductor === "object"
       ? (p.conductor?.nombres ? `${p.conductor.nombres} ${p.conductor.apellidos || ""}` : p.conductor?.nombre || p.conductor?.persona || "")
       : "";
-    const matchSearch = !s || placa.toLowerCase().includes(s) || conductor.toLowerCase().includes(s);
-    const matchEstado = estadoFilter === "todos" || p.estadoGeneral === estadoFilter;
-    return matchSearch && matchEstado;
+    return placa.toLowerCase().includes(s) || conductor.toLowerCase().includes(s);
   }) || [];
 
   return (
@@ -668,15 +717,29 @@ function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerTok
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por placa o conductor..."
+            placeholder="Buscar por conductor o placa en esta página..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
         <div className="flex items-center gap-2">
+          <Truck className="h-4 w-4 text-muted-foreground" />
+          <Select value={placaFiltro} onValueChange={(v) => { setPlacaFiltro(v); setPage(1); }}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Placa" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas las placas</SelectItem>
+              {placasSelector.map((placa) => (
+                <SelectItem key={placa} value={placa}>{placa}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={estadoFilter} onValueChange={setEstadoFilter}>
+          <Select value={estadoFilter} onValueChange={(v) => { setEstadoFilter(v); setPage(1); }}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Estado" />
             </SelectTrigger>
@@ -689,6 +752,38 @@ function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerTok
           </Select>
         </div>
       </div>
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Input
+            type="date"
+            value={fechaDesde}
+            onChange={(e) => { setFechaDesde(e.target.value); setPage(1); }}
+            className="w-40"
+            title="Desde"
+          />
+          <span className="text-muted-foreground text-sm">—</span>
+          <Input
+            type="date"
+            value={fechaHasta}
+            onChange={(e) => { setFechaHasta(e.target.value); setPage(1); }}
+            className="w-40"
+            title="Hasta"
+          />
+        </div>
+        {hayFiltros && (
+          <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
+            Limpiar filtros
+          </Button>
+        )}
+        {!isLoading && pagination && (
+          <span className="text-xs text-muted-foreground ml-auto">
+            {pagination.total} registros
+            {placaFiltro !== "todas" ? ` · historial de ${placaFiltro}` : ""}
+            {fechaDesde || fechaHasta ? ` · ${fechaDesde || "inicio"} → ${fechaHasta || "hoy"}` : ""}
+          </span>
+        )}
+      </div>
 
       {/* Table */}
       {isLoading ? (
@@ -699,6 +794,9 @@ function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerTok
         <div className="text-center py-12">
           <ClipboardCheck className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <p className="text-muted-foreground">No se encontraron preoperacionales</p>
+          {hayFiltros && (
+            <Button variant="link" size="sm" onClick={limpiarFiltros}>Limpiar filtros</Button>
+          )}
         </div>
       ) : (
         <div className="border rounded-lg overflow-hidden">
@@ -796,6 +894,23 @@ function PreoperativasSection({ bearerToken, isAdmin, queryClient }: { bearerTok
               })}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {/* Pagination (servidor) */}
+      {!isLoading && pagination && pagination.pages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-muted-foreground">
+            Página {pagination.page} de {pagination.pages} ({pagination.total} inspecciones)
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              <ChevronLeft className="h-4 w-4" /> Anterior
+            </Button>
+            <Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage(page + 1)}>
+              Siguiente <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
 

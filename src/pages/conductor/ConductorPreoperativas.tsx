@@ -140,6 +140,8 @@ interface VehiculoInfo {
   modelo: string;
   cellviId: number;
   extraDisponible: boolean;
+  /** Estado operativo del vehículo (INMOVILIZADO = retenido por una multa) */
+  estado?: string;
   found: true;
 }
 
@@ -263,6 +265,7 @@ export default function ConductorPreoperativas() {
               modelo: rawVeh.modelo || "",
               cellviId: v.id,
               extraDisponible: Boolean(rawVeh.preoperativaExtraDisponible),
+              estado: rawVeh.estado || "",
               found: true,
             } as VehiculoInfo;
           } catch {
@@ -529,6 +532,7 @@ export default function ConductorPreoperativas() {
         const errData = await res.json().catch(() => null);
         const error: any = new Error(errData?.message || "Error al enviar la preoperacional");
         error.status = res.status;
+        error.code = errData?.code;
         throw error;
       }
 
@@ -546,7 +550,11 @@ export default function ConductorPreoperativas() {
       queryClient.invalidateQueries({ queryKey: ["conductor-vehiculos-check"] });
     },
     onError: (error: any) => {
-      if (error.status === 409) {
+      if (error.code === "VEHICULO_INMOVILIZADO") {
+        // Vehículo retenido por una multa: el backend lo bloquea hasta levantar la inmovilización
+        toast.error(error.message);
+        queryClient.invalidateQueries({ queryKey: ["conductor-vehiculos-check"] });
+      } else if (error.status === 409) {
         toast.error("Ya existe una preoperacional para este vehículo hoy. Contacte al administrador para habilitar una extra.");
       } else {
         toast.error(error.message);
@@ -1791,6 +1799,33 @@ export default function ConductorPreoperativas() {
                         </p>
                       </div>
                       <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+                    </div>
+                  </div>
+                );
+              }
+
+              // Retenido por la autoridad (multa con inmovilización vigente): fuera
+              // de operación, sin botón de preoperacional.
+              if (v.estado === "INMOVILIZADO") {
+                return (
+                  <div
+                    key={v.cellviId}
+                    className="bg-card border border-red-300 dark:border-red-800 rounded-lg p-4"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2.5 rounded-lg bg-red-100 dark:bg-red-900/30">
+                        <Car className="h-5 w-5 text-red-600 dark:text-red-400" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-foreground">{v.placa}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {v.marca} {v.linea} {v.modelo}
+                        </p>
+                      </div>
+                      <Badge variant="destructive" className="shrink-0">Inmovilizado por multa</Badge>
+                    </div>
+                    <div className="w-full text-center py-2 px-3 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs font-medium text-red-700 dark:text-red-400">
+                      Fuera de operación hasta que administración levante la inmovilización. No se pueden realizar preoperativas.
                     </div>
                   </div>
                 );

@@ -16,6 +16,7 @@ import {
   Building2,
   Route,
   Fuel,
+  Gavel,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -38,7 +39,8 @@ type EntityType =
   | "documentos"
   | "contratos"
   | "rutas"
-  | "combustible";
+  | "combustible"
+  | "multas";
 
 interface DeletedItem {
   _id: string;
@@ -58,6 +60,12 @@ const ENTITY_CONFIG: Record<EntityType, { label: string; icon: typeof Users; end
     label: "Tanqueos",
     icon: Fuel,
     endpoint: "/api/operacion/combustible",
+    skipEmpresaFilter: true,
+  },
+  multas: {
+    label: "Multas",
+    icon: Gavel,
+    endpoint: "/api/multas",
     skipEmpresaFilter: true,
   },
 };
@@ -103,6 +111,16 @@ function normalizeItems(entity: EntityType, data: unknown[]): DeletedItem[] {
           ? new Date(item.fecha as string).toLocaleDateString("es-CO")
           : "";
         displayDetail = [galones, fecha].filter(Boolean).join(" · ");
+        break;
+      }
+      case "multas": {
+        const veh = item.vehiculo as { placa?: string } | null;
+        const placa = (item.placa as string) || veh?.placa || "";
+        displayName = [item.numero as string, placa].filter(Boolean).join(" · ") || String(item._id);
+        const fecha = item.fecha
+          ? new Date(item.fecha as string).toLocaleDateString("es-CO")
+          : "";
+        displayDetail = [item.descripcion as string, fecha].filter(Boolean).join(" · ");
         break;
       }
     }

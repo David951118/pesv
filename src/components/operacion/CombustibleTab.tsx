@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Gauge, Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Gauge, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,12 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -411,7 +405,8 @@ function EliminarDialog({ tanqueo, onClose }: { tanqueo: ApiRndcTanqueo | null; 
         <DialogHeader>
           <DialogTitle>Eliminar tanqueo</DialogTitle>
           <DialogDescription>
-            ¿Está seguro de eliminar este registro de tanqueo? Esta acción no se puede deshacer.
+            ¿Está seguro de eliminar este registro de tanqueo? Se enviará a la papelera y se
+            recalculará el rendimiento tanque a tanque del vehículo.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -590,32 +585,33 @@ export function CombustibleTab() {
                       </TableCell>
                       <TableCell className="text-center">
                         {isAdmin ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span className="sr-only">Acciones</span>
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setEditTanqueo(t);
-                                  setFormOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => setEliminarTanqueo(t)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Eliminar
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          // Editar/eliminar tanqueos: exclusivo del admin de plataforma
+                          // (backend ADMIN_COMBUSTIBLE); botones visibles, sin menú oculto.
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              title="Editar tanqueo"
+                              onClick={() => {
+                                setEditTanqueo(t);
+                                setFormOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              <span className="sr-only">Editar</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              title="Eliminar tanqueo"
+                              onClick={() => setEliminarTanqueo(t)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Eliminar</span>
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}

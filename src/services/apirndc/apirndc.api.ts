@@ -44,6 +44,12 @@ import type {
   ApiRndcTanqueoCreatePayload,
   ApiRndcRendimientoCombustible,
   ApiRndcKpisGerenciales,
+  ApiRndcMulta,
+  ApiRndcMultaCreatePayload,
+  ApiRndcMultaUpdatePayload,
+  ApiRndcMultaPagoPayload,
+  ApiRndcMultaResumen,
+  ApiRndcArchivo,
 } from './apirndc.types';
 
 // ─── Vehiculos ───
@@ -264,7 +270,19 @@ export async function getEmpresasList(signal?: AbortSignal) {
 // ─── Preoperacionales ───
 
 export async function getPreoperacionales(
-  params?: { vehiculoId?: string; conductorId?: string; estadoGeneral?: string; page?: number; limit?: number },
+  params?: {
+    vehiculoId?: string;
+    /** coincidencia parcial de placa (sin distinguir mayúsculas) */
+    placa?: string;
+    conductorId?: string;
+    estadoGeneral?: string;
+    /** días sueltos YYYY-MM-DD (el backend los ancla al día colombiano) */
+    fechaDesde?: string;
+    fechaHasta?: string;
+    page?: number;
+    /** hasta 1000 */
+    limit?: number;
+  },
   signal?: AbortSignal,
 ) {
   return apirndcProxyCall<ApiRndcPaginatedResponse<ApiRndcPreoperacional[]>>(
@@ -742,6 +760,124 @@ export async function getRendimientoCombustible(
 ) {
   return apirndcProxyCall<{ success: boolean; data: ApiRndcRendimientoCombustible[] }>(
     'GET', '/operacion/combustible/rendimiento', params as Record<string, unknown>, signal,
+  );
+}
+
+// ─── Multas / comparendos ───
+
+export interface ApiRndcMultasParams {
+  vehiculo?: string;
+  placa?: string;
+  conductor?: string;
+  estado?: string;
+  responsable?: string;
+  /** 'true' vigentes, 'false' sin inmovilización vigente, 'aplica' con inmovilización (levantada o no) */
+  inmovilizado?: 'true' | 'false' | 'aplica';
+  desde?: string;
+  hasta?: string;
+  page?: number;
+  limit?: number;
+  onlyDeleted?: boolean;
+}
+
+export async function getMultas(params?: ApiRndcMultasParams, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta[]; total: number; page: number; pages: number }>(
+    'GET', '/multas', params as Record<string, unknown>, signal,
+  );
+}
+
+export async function getMultasResumen(
+  params?: { desde?: string; hasta?: string },
+  signal?: AbortSignal,
+) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMultaResumen | null }>(
+    'GET', '/multas/resumen', params as Record<string, unknown>, signal,
+  );
+}
+
+export async function getMultaById(id: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'GET', `/multas/${id}`, undefined, signal,
+  );
+}
+
+export async function createMulta(payload: ApiRndcMultaCreatePayload, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'POST', '/multas', payload as unknown as Record<string, unknown>, signal,
+  );
+}
+
+export async function updateMulta(id: string, payload: ApiRndcMultaUpdatePayload, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'PUT', `/multas/${id}`, payload as unknown as Record<string, unknown>, signal,
+  );
+}
+
+export async function agregarFotosMulta(id: string, fotos: ApiRndcArchivo[], signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'POST', `/multas/${id}/fotos`, { fotos }, signal,
+  );
+}
+
+export async function eliminarFotoMulta(id: string, fotoId: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'DELETE', `/multas/${id}/fotos/${fotoId}`, undefined, signal,
+  );
+}
+
+export async function pagarMulta(id: string, payload: ApiRndcMultaPagoPayload, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'POST', `/multas/${id}/pagar`, payload as unknown as Record<string, unknown>, signal,
+  );
+}
+
+export async function impugnarMulta(id: string, motivo?: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'POST', `/multas/${id}/impugnar`, { motivo }, signal,
+  );
+}
+
+export async function anularMulta(id: string, motivo?: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta; vehiculoLiberado?: boolean }>(
+    'POST', `/multas/${id}/anular`, { motivo }, signal,
+  );
+}
+
+export async function subirCorreccionMulta(
+  id: string,
+  payload: { descripcion?: string; evidencias?: ApiRndcArchivo[] },
+  signal?: AbortSignal,
+) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'POST', `/multas/${id}/inmovilizacion/correccion`, payload as Record<string, unknown>, signal,
+  );
+}
+
+export async function levantarInmovilizacionMulta(
+  id: string,
+  payload: { observaciones?: string; forzar?: boolean },
+  signal?: AbortSignal,
+) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta; vehiculoLiberado?: boolean }>(
+    'POST', `/multas/${id}/inmovilizacion/levantar`, payload as Record<string, unknown>, signal,
+  );
+}
+
+export async function deleteMulta(id: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; vehiculoLiberado?: boolean }>(
+    'DELETE', `/multas/${id}`, undefined, signal,
+  );
+}
+
+export async function restoreMulta(id: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean; data: ApiRndcMulta }>(
+    'POST', `/multas/${id}/restore`, undefined, signal,
+  );
+}
+
+export async function hardDeleteMulta(id: string, signal?: AbortSignal) {
+  return apirndcProxyCall<{ success: boolean }>(
+    'DELETE', `/multas/${id}/hard`, undefined, signal,
   );
 }
 
