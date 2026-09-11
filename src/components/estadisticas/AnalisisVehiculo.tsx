@@ -236,6 +236,11 @@ const ESTADO_OT_BADGE: Record<string, string> = {
 interface Props {
   vehiculos: VehiculoOption[];
   isDark?: boolean;
+  /**
+   * Km con que se calcula el costo por km del vehículo. Lo decide el selector
+   * de la pestaña Gerencial (una sola fuente para todas las estadísticas).
+   */
+  fuenteKm?: "ODOMETRO" | "VIAJES";
 }
 
 /**
@@ -243,14 +248,12 @@ interface Props {
  * Selecciona un carro + rango (por defecto el mes corrido) y abre un popup con
  * preoperativas, tanqueos, mantenimientos, costos y recorrido real (odómetro).
  */
-export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
+export function AnalisisVehiculo({ vehiculos, isDark = false, fuenteKm = "ODOMETRO" }: Props) {
   const { bearerToken } = useAuth();
 
   const [vehiculoId, setVehiculoId] = useState<string>("");
   const [desde, setDesde] = useState(primerDiaMesActual);
   const [hasta, setHasta] = useState(hoyISO);
-  // Km con que se calcula el costo por km del vehículo (odómetro = recorrido real)
-  const [fuenteKm, setFuenteKm] = useState<"ODOMETRO" | "VIAJES">("ODOMETRO");
   const [open, setOpen] = useState(false);
 
   const axisColor = isDark ? "#cbd5e1" : "#475569";
@@ -330,17 +333,12 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
             <label className="text-xs font-medium text-muted-foreground">Hasta</label>
             <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="w-[150px]" />
           </div>
-          <div className="space-y-1 min-w-[210px]">
-            <label className="text-xs font-medium text-muted-foreground">Kilometraje para costo/km</label>
-            <Select value={fuenteKm} onValueChange={(v) => setFuenteKm(v as "ODOMETRO" | "VIAJES")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ODOMETRO">Odómetro (recorrido real)</SelectItem>
-                <SelectItem value="VIAJES">Viajes registrados</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Kilometraje</label>
+            <p className="text-sm h-10 flex items-center">
+              {fuenteKm === "VIAJES" ? "Viajes registrados" : "Odómetro (recorrido real)"}
+              <span className="text-xs text-muted-foreground ml-1">(según el filtro de la pestaña)</span>
+            </p>
           </div>
           <Button
             onClick={() => setOpen(true)}
@@ -371,7 +369,7 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
                 ? `${data.vehiculo.placa} — ${[data.vehiculo.marca, data.vehiculo.linea, data.vehiculo.modelo].filter(Boolean).join(" ")}`
                 : vehiculoSel?.placa || "Vehículo"}
               <span className="text-sm font-normal text-muted-foreground ml-2">
-                {desde} → {hasta}
+                {desde} → {hasta} · km {fuenteKm === "VIAJES" ? "por viajes" : "de odómetro"}
               </span>
             </DialogTitle>
           </DialogHeader>

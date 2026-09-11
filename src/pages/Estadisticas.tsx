@@ -216,8 +216,23 @@ export default function Estadisticas() {
   // Filtros del tab gerencial: mismo criterio, el mes en curso
   const [kpiDesde, setKpiDesde] = useState(primerDiaMesActual);
   const [kpiHasta, setKpiHasta] = useState(hoyISO);
-  // Km con que se calcula el costo por km: viajes registrados u odómetro (recorrido real)
-  const [kpiFuenteKm, setKpiFuenteKm] = useState<"VIAJES" | "ODOMETRO">("VIAJES");
+  // Km con que se calculan TODAS las estadísticas de la pestaña (costo por km,
+  // ranking y análisis por vehículo): odómetro (recorrido real, default) o
+  // viajes registrados. La elección se recuerda en este navegador.
+  const [kpiFuenteKm, setKpiFuenteKm] = useState<"VIAJES" | "ODOMETRO">(() => {
+    try {
+      return localStorage.getItem("estadisticas.fuenteKm") === "VIAJES" ? "VIAJES" : "ODOMETRO";
+    } catch {
+      return "ODOMETRO";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("estadisticas.fuenteKm", kpiFuenteKm);
+    } catch {
+      // sin almacenamiento (modo privado): se usa solo en memoria
+    }
+  }, [kpiFuenteKm]);
 
   // Restablecer = volver al mes en curso (no a "sin filtro")
   const clearFilters = () => {
@@ -859,16 +874,19 @@ export default function Estadisticas() {
                   <Input type="date" value={kpiDesde} onChange={(e) => setKpiDesde(e.target.value)} />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Kilometraje para costo/km</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">Kilometraje para las estadísticas</label>
                   <Select value={kpiFuenteKm} onValueChange={(v) => setKpiFuenteKm(v as "VIAJES" | "ODOMETRO")}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="VIAJES">Viajes registrados</SelectItem>
                       <SelectItem value="ODOMETRO">Odómetro (recorrido real)</SelectItem>
+                      <SelectItem value="VIAJES">Viajes registrados</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Aplica a costo por km, ranking y análisis por vehículo
+                  </p>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
@@ -1165,7 +1183,7 @@ export default function Estadisticas() {
 
                 {/* Análisis por vehículo (popup con preoperativas, tanqueos,
                     mantenimientos, costos y recorrido real) */}
-                <AnalisisVehiculo vehiculos={vehiculos} isDark={isDark} />
+                <AnalisisVehiculo vehiculos={vehiculos} isDark={isDark} fuenteKm={kpiFuenteKm} />
               </>
             )}
           </TabsContent>
