@@ -44,7 +44,16 @@ import {
   Wallet,
   Trophy,
   Gavel,
+  Route,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { ApiRndcKpisGerenciales } from "@/services/apirndc/apirndc.types";
 import { AnalisisVehiculo } from "@/components/estadisticas/AnalisisVehiculo";
 import {
@@ -233,6 +242,13 @@ export default function Estadisticas() {
       // sin almacenamiento (modo privado): se usa solo en memoria
     }
   }, [kpiFuenteKm]);
+  // Al cambiar la fuente se explica qué mide cada una y cuándo conviene usarla
+  const [fuenteInfoOpen, setFuenteInfoOpen] = useState(false);
+  const cambiarFuenteKm = (valor: "VIAJES" | "ODOMETRO") => {
+    if (valor === kpiFuenteKm) return;
+    setKpiFuenteKm(valor);
+    setFuenteInfoOpen(true);
+  };
 
   // Restablecer = volver al mes en curso (no a "sin filtro")
   const clearFilters = () => {
@@ -866,7 +882,11 @@ export default function Estadisticas() {
             {/* Filtro de rango de fechas (opcional) */}
             <ContentCard
               className="mt-6"
-              header={{ title: "Filtros", subtitle: `Por defecto, el mes en curso (${nombreMesActual()})`, icon: <Calendar className="h-4 w-4" /> }}
+              header={{
+                title: "Filtros",
+                subtitle: `Por defecto, el mes en curso (${nombreMesActual()}). El kilometraje elegido aplica a costo por km, ranking y análisis por vehículo`,
+                icon: <Calendar className="h-4 w-4" />,
+              }}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
@@ -875,7 +895,7 @@ export default function Estadisticas() {
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Kilometraje para las estadísticas</label>
-                  <Select value={kpiFuenteKm} onValueChange={(v) => setKpiFuenteKm(v as "VIAJES" | "ODOMETRO")}>
+                  <Select value={kpiFuenteKm} onValueChange={(v) => cambiarFuenteKm(v as "VIAJES" | "ODOMETRO")}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -884,9 +904,6 @@ export default function Estadisticas() {
                       <SelectItem value="VIAJES">Viajes registrados</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Aplica a costo por km, ranking y análisis por vehículo
-                  </p>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
@@ -916,6 +933,81 @@ export default function Estadisticas() {
                 </div>
               </div>
             </ContentCard>
+
+            {/* Explicación de la fuente de kilometraje (se abre al cambiar el selector) */}
+            <Dialog open={fuenteInfoOpen} onOpenChange={setFuenteInfoOpen}>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>
+                    {kpiFuenteKm === "ODOMETRO"
+                      ? "Estadísticas con kilometraje de odómetro"
+                      : "Estadísticas con kilometraje de viajes registrados"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    El kilometraje elegido se usa para el costo por km, el ranking de vehículos y el
+                    análisis por vehículo. Cada fuente mide algo distinto:
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 text-sm">
+                  <div
+                    className={`rounded-md border p-3 ${
+                      kpiFuenteKm === "ODOMETRO" ? "border-primary bg-primary/5" : "border-border"
+                    }`}
+                  >
+                    <p className="font-semibold flex items-center gap-2">
+                      <Gauge className="h-4 w-4 text-primary" />
+                      Odómetro (recorrido real)
+                      {kpiFuenteKm === "ODOMETRO" && (
+                        <Badge variant="secondary" className="ml-auto">Seleccionado</Badge>
+                      )}
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      Usa el kilometraje que la plataforma captura cada día del odómetro del vehículo
+                      (GPS de Cellvi; si no reporta, la preoperativa o el dato manual) y suma lo que
+                      avanzó entre un día y otro dentro del rango. Cuenta <strong>todo</strong> lo que
+                      el vehículo se movió, tenga o no un viaje registrado.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      <strong>Úselo</strong> para conocer el costo real por kilómetro y comparar
+                      vehículos. <strong>Tenga en cuenta:</strong> depende de la captura diaria (existe
+                      desde el 2 de septiembre de 2026); un vehículo sin odómetro reportado queda con 0 km
+                      en el rango.
+                    </p>
+                  </div>
+                  <div
+                    className={`rounded-md border p-3 ${
+                      kpiFuenteKm === "VIAJES" ? "border-primary bg-primary/5" : "border-border"
+                    }`}
+                  >
+                    <p className="font-semibold flex items-center gap-2">
+                      <Route className="h-4 w-4 text-primary" />
+                      Viajes registrados
+                      {kpiFuenteKm === "VIAJES" && (
+                        <Badge variant="secondary" className="ml-auto">Seleccionado</Badge>
+                      )}
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      Suma el kilometraje de los viajes <strong>finalizados</strong> en el rango (km fin
+                      menos km inicio digitados en la bitácora). Si un vehículo no tiene viajes, se estima
+                      con el rendimiento de sus tanqueos.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      <strong>Úselo</strong> para medir la operación registrada (rutas asignadas y
+                      cerradas) o cuando aún no hay datos de odómetro. <strong>Tenga en cuenta:</strong>{" "}
+                      depende de que los conductores registren y cierren los viajes; lo que el vehículo
+                      recorra por fuera de un viaje no cuenta.
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    En el ranking, cada kilometraje muestra debajo el valor de la otra fuente para
+                    compararlos. La elección se recuerda en este navegador.
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button onClick={() => setFuenteInfoOpen(false)}>Entendido</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {kpisLoading ? (
               <div className="mt-6 space-y-6">
