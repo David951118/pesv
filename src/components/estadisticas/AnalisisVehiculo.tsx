@@ -155,6 +155,8 @@ interface ResumenVehiculo {
     kmFin: number | null;
     /** recorrido real por snapshots diarios del odómetro */
     recorridoKm: number;
+    /** saltos imposibles del odómetro (>2.000 km/día) descartados del recorrido */
+    saltosIgnorados?: number;
     /** km de viajes finalizados del rango */
     kmViajes?: number;
     viajesFinalizados?: number;
@@ -535,6 +537,13 @@ export function AnalisisVehiculo({ vehiculos, isDark = false, fuenteKm = "ODOMET
                     </span>{" "}
                     (incluye movimientos por fuera de rutas)
                   </p>
+                  {(data.kilometraje.saltosIgnorados ?? 0) > 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      Se ignoraron {data.kilometraje.saltosIgnorados} salto(s) imposibles del odómetro
+                      (más de 2.000 km en un día). Revise el kilometraje digitado en las preoperativas o
+                      el odómetro del GPS de este vehículo.
+                    </p>
+                  )}
                 </div>
               </div>
 

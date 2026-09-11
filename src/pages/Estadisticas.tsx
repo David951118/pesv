@@ -971,7 +971,8 @@ export default function Estadisticas() {
                       <strong>Úselo</strong> para conocer el costo real por kilómetro y comparar
                       vehículos. <strong>Tenga en cuenta:</strong> depende de la captura diaria (existe
                       desde el 2 de septiembre de 2026); un vehículo sin odómetro reportado queda con 0 km
-                      en el rango.
+                      en el rango, y los saltos imposibles (más de 2.000 km en un día, típicos de un
+                      dígito mal digitado en la preoperativa) se descartan.
                     </p>
                   </div>
                   <div
