@@ -74,6 +74,7 @@ import type {
 import {
   formatCOP,
   formatFecha,
+  formatFechaSolo,
   getMecanicoNombre,
   OT_ESTADOS,
   OT_ESTADO_BADGE_CLASS,
@@ -707,7 +708,9 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                         </TableCell>
                         <TableCell className="text-right">{formatCOP(orden.costoTotal)}</TableCell>
                         <TableCell>
-                          <span className="text-sm">{formatFecha(orden.fechaProgramada || orden.createdAt)}</span>
+                          <span className="text-sm">
+                            {orden.fechaProgramada ? formatFechaSolo(orden.fechaProgramada) : formatFecha(orden.createdAt)}
+                          </span>
                         </TableCell>
                         <TableCell className="text-center">
                           <DropdownMenu>

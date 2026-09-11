@@ -153,7 +153,14 @@ interface ResumenVehiculo {
     dias: number;
     kmInicio: number | null;
     kmFin: number | null;
+    /** recorrido real por snapshots diarios del odómetro */
     recorridoKm: number;
+    /** km de viajes finalizados del rango */
+    kmViajes?: number;
+    viajesFinalizados?: number;
+    fuente?: "ODOMETRO" | "VIAJES";
+    /** el km usado para el costo por km (según fuente) */
+    kmSeleccionado?: number;
     snapshots: SnapshotKm[];
     nota?: string | null;
   };
@@ -242,6 +249,8 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
   const [vehiculoId, setVehiculoId] = useState<string>("");
   const [desde, setDesde] = useState(primerDiaMesActual);
   const [hasta, setHasta] = useState(hoyISO);
+  // Km con que se calcula el costo por km del vehículo (odómetro = recorrido real)
+  const [fuenteKm, setFuenteKm] = useState<"ODOMETRO" | "VIAJES">("ODOMETRO");
   const [open, setOpen] = useState(false);
 
   const axisColor = isDark ? "#cbd5e1" : "#475569";
@@ -250,11 +259,12 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
   const tooltipBorder = isDark ? "#334155" : "#e2e8f0";
 
   const { data, isLoading } = useQuery({
-    queryKey: ["analisis-vehiculo", vehiculoId, desde, hasta],
+    queryKey: ["analisis-vehiculo", vehiculoId, desde, hasta, fuenteKm],
     queryFn: async (): Promise<ResumenVehiculo> => {
       const params = new URLSearchParams();
       if (desde) params.set("desde", desde);
       if (hasta) params.set("hasta", hasta);
+      params.set("fuenteKm", fuenteKm);
       const res = await fetch(
         `${getApiRndcBaseUrl()}/api/estadisticas/vehiculo/${vehiculoId}?${params.toString()}`,
         { headers: { Authorization: `Bearer ${bearerToken}` } },
@@ -319,6 +329,18 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Hasta</label>
             <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="w-[150px]" />
+          </div>
+          <div className="space-y-1 min-w-[210px]">
+            <label className="text-xs font-medium text-muted-foreground">Kilometraje para costo/km</label>
+            <Select value={fuenteKm} onValueChange={(v) => setFuenteKm(v as "ODOMETRO" | "VIAJES")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ODOMETRO">Odómetro (recorrido real)</SelectItem>
+                <SelectItem value="VIAJES">Viajes registrados</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Button
             onClick={() => setOpen(true)}
@@ -395,16 +417,27 @@ export function AnalisisVehiculo({ vehiculos, isDark = false }: Props) {
                   hint={`${data.multas?.total ?? 0} multas · ${data.multas?.pendientes ?? 0} pendientes${(data.multas?.inmovilizaciones ?? 0) > 0 ? ` · ${data.multas?.inmovilizaciones} inmov.` : ""}`}
                   alerta={(data.multas?.pendientes ?? 0) > 0}
                 />
-                <KpiMini
-                  icon={Gauge}
-                  label="Recorrido real"
-                  value={data.kilometraje.recorridoKm > 0 ? formatKm(data.kilometraje.recorridoKm) : "—"}
-                  hint={
-                    data.kilometraje.kmInicio != null && data.kilometraje.kmFin != null
-                      ? `${formatKm(data.kilometraje.kmInicio)} → ${formatKm(data.kilometraje.kmFin)}`
-                      : "sin snapshots"
-                  }
-                />
+                {data.kilometraje.fuente === "VIAJES" ? (
+                  <KpiMini
+                    icon={Gauge}
+                    label="Km por viajes"
+                    value={(data.kilometraje.kmViajes ?? 0) > 0 ? formatKm(data.kilometraje.kmViajes) : "—"}
+                    hint={`${data.kilometraje.viajesFinalizados ?? 0} viajes finalizados · odómetro: ${
+                      data.kilometraje.recorridoKm > 0 ? formatKm(data.kilometraje.recorridoKm) : "—"
+                    }`}
+                  />
+                ) : (
+                  <KpiMini
+                    icon={Gauge}
+                    label="Recorrido real (odómetro)"
+                    value={data.kilometraje.recorridoKm > 0 ? formatKm(data.kilometraje.recorridoKm) : "—"}
+                    hint={`${
+                      data.kilometraje.kmInicio != null && data.kilometraje.kmFin != null
+                        ? `${formatKm(data.kilometraje.kmInicio)} → ${formatKm(data.kilometraje.kmFin)}`
+                        : "sin snapshots"
+                    } · viajes: ${(data.kilometraje.kmViajes ?? 0) > 0 ? formatKm(data.kilometraje.kmViajes) : "—"}`}
+                  />
+                )}
                 <KpiMini
                   icon={DollarSign}
                   label="Costo total"

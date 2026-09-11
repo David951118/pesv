@@ -11,6 +11,7 @@ import type { ApiRndcViaje } from "@/services/apirndc/apirndc.types";
 import {
   formatDuracion,
   formatFecha,
+  formatFechaSolo,
   formatFechaHora,
   formatKm,
   getConductorNombre,
@@ -65,7 +66,7 @@ export function ViajeDetalleDialog({ viaje, onClose }: ViajeDetalleDialogProps) 
             <InfoItem label="Vehículo" value={viaje.vehiculo?.placa || viaje.placa || "-"} />
             <InfoItem label="Conductor" value={getConductorNombre(viaje.conductor)} />
             <InfoItem label="Ruta" value={getRutaTexto(viaje)} />
-            <InfoItem label="Fecha programada" value={formatFecha(viaje.fechaProgramada)} />
+            <InfoItem label="Fecha programada" value={formatFechaSolo(viaje.fechaProgramada)} />
             <InfoItem label="Fecha de salida" value={formatFechaHora(viaje.fechaSalida)} />
             <InfoItem label="Fecha de llegada" value={formatFechaHora(viaje.fechaLlegada)} />
             <InfoItem label="Km inicio" value={formatKm(viaje.kmInicio)} />

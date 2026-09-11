@@ -770,14 +770,23 @@ export interface ApiRndcRankingVehiculo {
   multas: number;
   inmovilizaciones: number;
   costoTotal: number;
+  /** km según la fuente elegida (fuenteKm de la respuesta) */
   kmRecorridos: number;
+  /** km de viajes finalizados del periodo */
+  kmViajes?: number;
+  /** recorrido real por snapshots diarios del odómetro */
+  kmOdometro?: number;
   costoPorKm: number | null;
   ordenes: number;
   preventivos: number;
   correctivos: number;
 }
 
+/** Con qué kilometraje se calcula el costo por km en los KPIs. */
+export type ApiRndcFuenteKm = 'VIAJES' | 'ODOMETRO';
+
 export interface ApiRndcKpisGerenciales {
+  fuenteKm?: ApiRndcFuenteKm;
   flota: {
     total: number;
     disponibles: number;
@@ -809,7 +818,10 @@ export interface ApiRndcKpisGerenciales {
     costoMantenimientoFlota: number;
     costoCombustibleFlota: number;
     costoMultasFlota: number;
+    /** km totales según fuenteKm */
     kmTotalFlota: number;
+    kmViajesFlota?: number;
+    kmOdometroFlota?: number;
     costoPorKmGlobal: number | null;
   };
   rankingVehiculos: ApiRndcRankingVehiculo[];

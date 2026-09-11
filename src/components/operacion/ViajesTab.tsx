@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -56,8 +56,9 @@ import {
   cancelarViaje,
 } from "@/services/apirndc";
 import type { ApiRndcViaje } from "@/services/apirndc/apirndc.types";
+import { CellviPlacaCombobox } from "@/components/documentos/CellviPlacaCombobox";
 import {
-  formatFecha,
+  formatFechaSolo,
   formatKm,
   getConductorNombre,
   getRutaTexto,
@@ -359,6 +360,14 @@ export function ViajesTab() {
     staleTime: 5 * 60_000,
   });
   const vehiculos = vehiculosRes?.data ?? [];
+  // Opciones del filtro de placa con buscador ("all" = sin filtro)
+  const placaOptions = useMemo(
+    () => [
+      { id: "all", placa: "Todos los vehículos" },
+      ...vehiculos.map((v) => ({ id: v._id, placa: v.placa })),
+    ],
+    [vehiculos],
+  );
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["op-viajes", estadoFilter, vehiculoFilter, desde, hasta, page],
@@ -405,23 +414,18 @@ export function ViajesTab() {
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Vehículo</label>
-          <Select
-            value={vehiculoFilter}
-            onValueChange={(value) => {
-              setVehiculoFilter(value);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="Vehículo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los vehículos</SelectItem>
-              {vehiculos.map((v) => (
-                <SelectItem key={v._id} value={v._id}>{v.placa}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Desplegable con buscador: la flota puede tener muchas placas */}
+          <div className="w-[190px]">
+            <CellviPlacaCombobox
+              options={placaOptions}
+              value={vehiculoFilter}
+              onSelect={(id) => {
+                setVehiculoFilter(id);
+                setPage(1);
+              }}
+              placeholder="Vehículo"
+            />
+          </div>
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Desde</label>
@@ -519,7 +523,7 @@ export function ViajesTab() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <span className="text-sm">{formatFecha(viaje.fechaProgramada)}</span>
+                          <span className="text-sm">{formatFechaSolo(viaje.fechaProgramada)}</span>
                         </TableCell>
                         <TableCell className="text-right">{formatKm(viaje.kmRecorrido)}</TableCell>
                         <TableCell>

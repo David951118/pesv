@@ -35,6 +35,27 @@ export function formatFecha(fecha?: string | null): string {
   }
 }
 
+/**
+ * Fecha "solo día" (fecha programada de viajes y OTs). El formulario la envía
+ * como "YYYY-MM-DD" y el backend la guarda como medianoche UTC; con
+ * `formatFecha` (hora local, Bogotá = UTC-5) salía un día antes. Se muestra por
+ * sus componentes UTC.
+ */
+export function formatFechaSolo(fecha?: string | null): string {
+  if (!fecha) return "-";
+  const d = new Date(fecha);
+  if (Number.isNaN(d.getTime())) return fecha;
+  try {
+    return format(
+      new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+      "dd MMM yyyy",
+      { locale: es },
+    );
+  } catch {
+    return fecha;
+  }
+}
+
 export function formatFechaHora(fecha?: string | null): string {
   if (!fecha) return "-";
   try {

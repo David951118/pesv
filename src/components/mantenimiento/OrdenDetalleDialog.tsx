@@ -32,6 +32,7 @@ import type {
 import {
   formatCOP,
   formatFecha,
+  formatFechaSolo,
   formatFechaHora,
   formatKm,
   getMecanicoNombre,
@@ -256,7 +257,7 @@ export function OrdenDetalleDialog({
             <InfoItem label="Mecánico" value={getMecanicoNombre(orden.mecanico)} />
             <InfoItem label="Taller" value={orden.taller || "-"} />
             <InfoItem label="Origen" value={orden.origen || "-"} />
-            <InfoItem label="Fecha programada" value={formatFecha(orden.fechaProgramada)} />
+            <InfoItem label="Fecha programada" value={formatFechaSolo(orden.fechaProgramada)} />
             <InfoItem label="Fecha de cierre" value={formatFecha(orden.fechaCierre)} />
             <InfoItem label="Creada" value={formatFecha(orden.createdAt)} />
           </div>

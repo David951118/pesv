@@ -307,7 +307,7 @@ export async function getEmpresaStats(empresaId: string, signal?: AbortSignal) {
 }
 
 export async function getKpisGerenciales(
-  params?: { desde?: string; hasta?: string; empresa?: string },
+  params?: { desde?: string; hasta?: string; empresa?: string; fuenteKm?: 'VIAJES' | 'ODOMETRO' },
   signal?: AbortSignal,
 ) {
   return apirndcProxyCall<{ success: boolean; data: ApiRndcKpisGerenciales | null; generadoEn?: string }>(

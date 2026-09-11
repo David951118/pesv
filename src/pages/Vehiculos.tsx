@@ -263,6 +263,9 @@ export default function Vehiculos() {
       claseVehiculo: data.tipoVehiculo?.nombre || "",
       motor: data.serialMotor || "",
       chasis: data.serialChasis || "",
+      // Cellvi también envía el color; no envía combustible, cilindraje,
+      // capacidad de pasajeros ni carrocería (esos se digitan a mano).
+      color: data.color?.nombre || f.color,
       fechaMatricula,
     }));
   };
@@ -363,7 +366,7 @@ export default function Vehiculos() {
         fechaMatricula: vehiculoForm.fechaMatricula,
         propietario: vehiculoForm.propietario,
         empresaAfiliadora,
-        fechaAfiliacion: vehiculoForm.fechaAfiliacion,
+        fechaAfiliacion: vehiculoForm.fechaAfiliacion || undefined,
         estado: vehiculoForm.estado,
         kilometrajeActual: Number(vehiculoForm.kilometrajeActual) || 0,
       };
@@ -429,7 +432,9 @@ export default function Vehiculos() {
       claseVehiculo: vehiculo.claseVehiculo || "",
       motor: vehiculo.motor || "",
       chasis: vehiculo.chasis || "",
-      fechaMatricula: vehiculo.fechaMatricula || "",
+      // El API devuelve ISO ("2020-05-10T00:00:00.000Z"); el <input type="date">
+      // solo acepta "YYYY-MM-DD" y con el ISO quedaba en blanco (se "borraba").
+      fechaMatricula: vehiculo.fechaMatricula ? vehiculo.fechaMatricula.substring(0, 10) : "",
       color: vehiculo.color || "",
       carroceria: vehiculo.carroceria || "",
       modalidad: vehiculo.modalidad || "",
@@ -438,7 +443,7 @@ export default function Vehiculos() {
       capacidadPasajeros: vehiculo.capacidadPasajeros?.toString() || "",
       numeroInterno: vehiculo.numeroInterno || "",
       kilometrajeActual: vehiculo.kilometrajeActual?.toString() || "",
-      fechaAfiliacion: vehiculo.fechaAfiliacion || "",
+      fechaAfiliacion: vehiculo.fechaAfiliacion ? vehiculo.fechaAfiliacion.substring(0, 10) : "",
       propietario: typeof vehiculo.propietario === "string" ? vehiculo.propietario : vehiculo.propietario?._id || "",
       estado: vehiculo.estado || "ACTIVO",
     });
@@ -464,9 +469,10 @@ export default function Vehiculos() {
         chasis: vehiculoForm.chasis,
         cilindraje: vehiculoForm.cilindraje,
         capacidadPasajeros: Number(vehiculoForm.capacidadPasajeros) || 0,
-        fechaMatricula: vehiculoForm.fechaMatricula,
+        // Vacío = no tocar (un "" rompe la validación de fecha del API)
+        fechaMatricula: vehiculoForm.fechaMatricula || undefined,
         propietario: vehiculoForm.propietario,
-        fechaAfiliacion: vehiculoForm.fechaAfiliacion,
+        fechaAfiliacion: vehiculoForm.fechaAfiliacion || undefined,
         estado: vehiculoForm.estado,
         kilometrajeActual: Number(vehiculoForm.kilometrajeActual) || 0,
       };

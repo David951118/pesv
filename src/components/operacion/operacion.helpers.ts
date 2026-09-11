@@ -9,7 +9,7 @@ import type {
 } from "@/services/apirndc/apirndc.types";
 
 // Reutilizamos los helpers de formato del módulo de mantenimiento.
-export { formatCOP, formatFecha, formatFechaHora, formatKm } from "@/components/mantenimiento/mantenimiento.helpers";
+export { formatCOP, formatFecha, formatFechaSolo, formatFechaHora, formatKm } from "@/components/mantenimiento/mantenimiento.helpers";
 
 // ─── Viajes: estados ───
 

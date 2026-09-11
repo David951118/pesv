@@ -216,6 +216,8 @@ export default function Estadisticas() {
   // Filtros del tab gerencial: mismo criterio, el mes en curso
   const [kpiDesde, setKpiDesde] = useState(primerDiaMesActual);
   const [kpiHasta, setKpiHasta] = useState(hoyISO);
+  // Km con que se calcula el costo por km: viajes registrados u odómetro (recorrido real)
+  const [kpiFuenteKm, setKpiFuenteKm] = useState<"VIAJES" | "ODOMETRO">("VIAJES");
 
   // Restablecer = volver al mes en curso (no a "sin filtro")
   const clearFilters = () => {
@@ -361,9 +363,11 @@ export default function Estadisticas() {
 
   // ── KPIs Gerenciales ──
   const { data: kpis, isLoading: kpisLoading } = useQuery({
-    queryKey: ["kpis-gerenciales", { desde: kpiDesde, hasta: kpiHasta }],
+    queryKey: ["kpis-gerenciales", { desde: kpiDesde, hasta: kpiHasta, fuenteKm: kpiFuenteKm }],
     queryFn: async ({ signal }) => {
-      const params: { desde?: string; hasta?: string } = {};
+      const params: { desde?: string; hasta?: string; fuenteKm?: "VIAJES" | "ODOMETRO" } = {
+        fuenteKm: kpiFuenteKm,
+      };
       if (kpiDesde) params.desde = kpiDesde;
       if (kpiHasta) params.hasta = kpiHasta;
       const res = await getKpisGerenciales(params, signal);
@@ -849,10 +853,22 @@ export default function Estadisticas() {
               className="mt-6"
               header={{ title: "Filtros", subtitle: `Por defecto, el mes en curso (${nombreMesActual()})`, icon: <Calendar className="h-4 w-4" /> }}
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Desde</label>
                   <Input type="date" value={kpiDesde} onChange={(e) => setKpiDesde(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Kilometraje para costo/km</label>
+                  <Select value={kpiFuenteKm} onValueChange={(v) => setKpiFuenteKm(v as "VIAJES" | "ODOMETRO")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="VIAJES">Viajes registrados</SelectItem>
+                      <SelectItem value="ODOMETRO">Odómetro (recorrido real)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Hasta</label>
@@ -955,7 +971,8 @@ export default function Estadisticas() {
                             : "—"}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {formatKm(kpis.costos.kmTotalFlota)} totales
+                          {formatKm(kpis.costos.kmTotalFlota)} totales ·{" "}
+                          {kpis.fuenteKm === "ODOMETRO" ? "odómetro" : "viajes"}
                         </p>
                       </div>
                       <div className="p-3 rounded-lg bg-purple-100 text-purple-600">
@@ -1086,7 +1103,9 @@ export default function Estadisticas() {
                             <TableHead className="text-right">Combustible</TableHead>
                             <TableHead className="text-right">Multas</TableHead>
                             <TableHead className="text-right">Costo total</TableHead>
-                            <TableHead className="text-right">Km recorridos</TableHead>
+                            <TableHead className="text-right">
+                              Km recorridos ({kpis.fuenteKm === "ODOMETRO" ? "odómetro" : "viajes"})
+                            </TableHead>
                             <TableHead className="text-right">Costo/km</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1120,7 +1139,15 @@ export default function Estadisticas() {
                                 )}
                               </TableCell>
                               <TableCell className="text-right font-bold">{formatCOP(v.costoTotal)}</TableCell>
-                              <TableCell className="text-right">{formatKm(v.kmRecorridos)}</TableCell>
+                              <TableCell className="text-right">
+                                {formatKm(v.kmRecorridos)}
+                                {/* La otra fuente, para comparar */}
+                                <span className="block text-xs text-muted-foreground">
+                                  {kpis.fuenteKm === "ODOMETRO"
+                                    ? `viajes: ${formatKm(v.kmViajes ?? 0)}`
+                                    : `odóm.: ${formatKm(v.kmOdometro ?? 0)}`}
+                                </span>
+                              </TableCell>
                               <TableCell className="text-right">
                                 {v.costoPorKm !== null ? formatCOP(v.costoPorKm) : "—"}
                               </TableCell>
