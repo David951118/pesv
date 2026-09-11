@@ -496,7 +496,12 @@ export function ViajesTab() {
                   viajes.map((viaje) => {
                     const puedeIniciar = viaje.estado === "PROGRAMADO";
                     const puedeFinalizar = viaje.estado === "EN_CURSO";
-                    const puedeEditar = viaje.estado === "PROGRAMADO" || viaje.estado === "EN_CURSO";
+                    // Un viaje FINALIZADO también se puede corregir (solo roles de
+                    // gestión; el backend lo verifica). CANCELADO no se edita.
+                    const puedeEditar =
+                      viaje.estado === "PROGRAMADO" ||
+                      viaje.estado === "EN_CURSO" ||
+                      viaje.estado === "FINALIZADO";
                     const puedeCancelar = viaje.estado === "PROGRAMADO" || viaje.estado === "EN_CURSO";
                     return (
                       <TableRow key={viaje._id}>
@@ -575,7 +580,7 @@ export function ViajesTab() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                title="Editar"
+                                title={viaje.estado === "FINALIZADO" ? "Corregir datos del viaje" : "Editar"}
                                 onClick={() => {
                                   setEditViaje(viaje);
                                   setFormOpen(true);

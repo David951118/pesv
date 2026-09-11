@@ -38,6 +38,8 @@ import type {
   ApiRndcRutaPayload,
   ApiRndcViaje,
   ApiRndcViajeCreatePayload,
+  ApiRndcViajeUpdatePayload,
+  ApiRndcViajeOdometroAjuste,
   ApiRndcViajeIniciarPayload,
   ApiRndcViajeFinalizarPayload,
   ApiRndcTanqueo,
@@ -680,10 +682,15 @@ export async function createViaje(
 
 export async function updateViaje(
   id: string,
-  payload: Partial<ApiRndcViajeCreatePayload>,
+  payload: ApiRndcViajeUpdatePayload,
   signal?: AbortSignal,
 ) {
-  return apirndcProxyCall<{ success: boolean; data: ApiRndcViaje; alertaSobrecarga?: boolean }>(
+  return apirndcProxyCall<{
+    success: boolean;
+    data: ApiRndcViaje;
+    alertaSobrecarga?: boolean;
+    odometro?: ApiRndcViajeOdometroAjuste | null;
+  }>(
     'PUT', `/operacion/viajes/${id}`, payload as unknown as Record<string, unknown>, signal,
   );
 }

@@ -667,6 +667,33 @@ export interface ApiRndcViajeCreatePayload {
   observaciones?: string;
 }
 
+/**
+ * Edición de un viaje existente. El vehículo nunca se cambia. fechaSalida solo
+ * aplica a viajes EN_CURSO o FINALIZADOS; fechaLlegada y kmFin solo a FINALIZADOS
+ * (el backend rechaza el campo en otro estado).
+ */
+export interface ApiRndcViajeUpdatePayload {
+  conductor?: string;
+  ruta?: string | null;
+  origen?: string;
+  destino?: string;
+  fechaProgramada?: string | null;
+  fechaSalida?: string | null;
+  fechaLlegada?: string | null;
+  kmInicio?: number | null;
+  kmFin?: number | null;
+  carga?: { pesoKg?: number | null; descripcion?: string };
+  entregas?: ApiRndcViajeEntrega[];
+  incidencias?: ApiRndcViajeIncidencia[];
+  observaciones?: string;
+}
+
+/** Ajuste del odómetro del vehículo aplicado al corregir el km fin de un viaje finalizado. */
+export interface ApiRndcViajeOdometroAjuste {
+  anterior: number | null;
+  nuevo: number;
+}
+
 export interface ApiRndcViajeIniciarPayload {
   kmInicio?: number;
   fechaSalida?: string;
