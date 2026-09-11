@@ -177,8 +177,19 @@ export async function apirndcProxyCall<T = unknown>(
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     try {
-      const json = JSON.parse(text) as { message?: string; error?: string };
-      if (json.message || json.error) throw new Error(json.message || json.error);
+      const json = JSON.parse(text) as {
+        message?: string;
+        error?: string;
+        details?: { field?: string; message?: string }[];
+      };
+      // Los errores de validación del API traen el motivo en `details`
+      // (p. ej. "El objeto archivo es obligatorio"); `error` solo dice
+      // "Error de Validación", que no le sirve al usuario.
+      const detalle = Array.isArray(json.details)
+        ? json.details.map((d) => d.message).filter(Boolean).join('; ')
+        : '';
+      const mensaje = json.message || detalle || json.error;
+      if (mensaje) throw new Error(mensaje);
     } catch (err) {
       if (err instanceof Error && err.message && !(err instanceof SyntaxError)) throw err;
     }

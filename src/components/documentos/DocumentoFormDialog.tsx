@@ -37,7 +37,9 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { getApiRndcBaseUrl } from "@/services/apirndc/apirndc.config";
+// Cliente con refresh automático del token: un fetch crudo con el bearerToken
+// fallaba con 401 si la sesión venció mientras se diligenciaba el formulario.
+import { apirndcProxyCall, getPresignedUrl } from "@/services/apirndc";
 import { useQueryClient } from "@tanstack/react-query";
 import { uploadFileToS3 } from "@/lib/uploadToS3";
 import { FileDropZone } from "./FileDropZone";
@@ -132,11 +134,7 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
     queryKey: ["doc-form-vehiculos"],
     queryFn: async () => {
       if (!bearerToken) return [];
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/vehiculos?limit=200`, {
-        headers: { Authorization: `Bearer ${bearerToken}` },
-      });
-      const result = await res.json();
-      if (!res.ok) return [];
+      const result = await apirndcProxyCall<{ data?: unknown[] }>("GET", "/vehiculos", { limit: 200 });
       return (result.data ?? []) as { _id: string; placa: string; marca?: string; linea?: string }[];
     },
     enabled: !!bearerToken && open,
@@ -146,11 +144,7 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
     queryKey: ["doc-form-terceros"],
     queryFn: async () => {
       if (!bearerToken) return [];
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/terceros?limit=200`, {
-        headers: { Authorization: `Bearer ${bearerToken}` },
-      });
-      const result = await res.json();
-      if (!res.ok) return [];
+      const result = await apirndcProxyCall<{ data?: unknown[] }>("GET", "/terceros", { limit: 200 });
       return (result.data ?? []) as { _id: string; nombres?: string; apellidos?: string; identificacion: string }[];
     },
     enabled: !!bearerToken && open,
@@ -160,11 +154,7 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
     queryKey: ["doc-form-empresas"],
     queryFn: async () => {
       if (!bearerToken) return [];
-      const res = await fetch(`${getApiRndcBaseUrl()}/api/empresas?limit=200`, {
-        headers: { Authorization: `Bearer ${bearerToken}` },
-      });
-      const result = await res.json();
-      if (!res.ok) return [];
+      const result = await apirndcProxyCall<{ data?: unknown[] }>("GET", "/empresas", { limit: 200 });
       return (result.data ?? []) as { _id: string; razonSocial: string; nit: string }[];
     },
     enabled: !!bearerToken && open,
@@ -286,6 +276,12 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
       toast.error("Complete los campos obligatorios: Tipo Documento, Entidad");
       return;
     }
+    // El API exige el archivo al crear; sin esta validación el usuario recibía
+    // un "Error al crear: 400" sin explicación.
+    if (!isEditing && !selectedFile) {
+      toast.error("Adjunte el archivo del documento (PDF o imagen) antes de guardar");
+      return;
+    }
 
     const basePayload: Record<string, unknown> = {
       entidadModelo: form.entidadModelo,
@@ -306,23 +302,8 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
         setUploadProgress(0);
 
         // Step 1: Get presigned URL
-        const presignedRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${bearerToken}`,
-          },
-          body: JSON.stringify({
-            fileName: selectedFile.name,
-            mimeType: selectedFile.type,
-          }),
-        });
-        if (!presignedRes.ok) {
-          const errText = await presignedRes.text().catch(() => "");
-          throw new Error(`Error obteniendo URL de subida: ${presignedRes.status} ${errText}`);
-        }
-        const presigned = await presignedRes.json();
-        const { uploadUrl, key, publicUrl } = presigned.data ?? presigned;
+        const presigned = await getPresignedUrl({ fileName: selectedFile.name, mimeType: selectedFile.type });
+        const { uploadUrl, key, publicUrl } = presigned.data;
 
         // Step 2: Upload to S3
         await uploadFileToS3(uploadUrl, selectedFile, (p) => setUploadProgress(p.percent));
@@ -349,22 +330,11 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
       try {
         setUploadProgressReverso(0);
 
-        const presignedRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${bearerToken}`,
-          },
-          body: JSON.stringify({
-            fileName: selectedFileReverso.name,
-            mimeType: selectedFileReverso.type,
-          }),
+        const presigned = await getPresignedUrl({
+          fileName: selectedFileReverso.name,
+          mimeType: selectedFileReverso.type,
         });
-        if (!presignedRes.ok) {
-          throw new Error(`Error obteniendo URL de subida (reverso): ${presignedRes.status}`);
-        }
-        const presigned = await presignedRes.json();
-        const { uploadUrl, key, publicUrl } = presigned.data ?? presigned;
+        const { uploadUrl, key, publicUrl } = presigned.data;
 
         await uploadFileToS3(uploadUrl, selectedFileReverso, (p) => setUploadProgressReverso(p.percent));
         setUploadProgressReverso(100);
@@ -388,14 +358,11 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
     if (selectedFileExtra) {
       try {
         setUploadProgressExtra(0);
-        const presignedRes = await fetch(`${getApiRndcBaseUrl()}/api/documentos/presigned-url`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearerToken}` },
-          body: JSON.stringify({ fileName: selectedFileExtra.name, mimeType: selectedFileExtra.type }),
+        const presigned = await getPresignedUrl({
+          fileName: selectedFileExtra.name,
+          mimeType: selectedFileExtra.type,
         });
-        if (!presignedRes.ok) throw new Error(`Error obteniendo URL de subida (extra): ${presignedRes.status}`);
-        const presigned = await presignedRes.json();
-        const { uploadUrl, key, publicUrl } = presigned.data ?? presigned;
+        const { uploadUrl, key, publicUrl } = presigned.data;
         await uploadFileToS3(uploadUrl, selectedFileExtra, (p) => setUploadProgressExtra(p.percent));
         setUploadProgressExtra(100);
         basePayload.archivoExtra = {
@@ -413,35 +380,23 @@ export function DocumentoFormDialog({ open, onOpenChange, documento, onSuccess, 
       }
     }
 
-    const base = getApiRndcBaseUrl();
-    const authHeaders = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${bearerToken}`,
-    };
-
     try {
       if (isEditing && documento) {
-        const res = await fetch(`${base}/api/documentos/${documento._id}`, {
-          method: "PUT",
-          headers: authHeaders,
-          body: JSON.stringify({ ...basePayload, entidadId: form.entidadIds[0] }),
+        // apirndcProxyCall refresca el token si venció y propaga el mensaje real
+        // del API (antes solo salía "Error al actualizar: 400").
+        await apirndcProxyCall("PUT", `/documentos/${documento._id}`, {
+          ...basePayload,
+          entidadId: form.entidadIds[0],
         });
-        if (!res.ok) throw new Error(`Error al actualizar: ${res.status}`);
         toast.success("Documento actualizado exitosamente");
         queryClient.invalidateQueries({ queryKey: ["apirndc-documentos"] });
         onOpenChange(false);
         onSuccess();
       } else {
         // For grupal: file uploaded once, same archivo metadata for all
-        const promises = form.entidadIds.map(async (entidadId) => {
-          const res = await fetch(`${base}/api/documentos`, {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({ ...basePayload, entidadId }),
-          });
-          if (!res.ok) throw new Error(`Error al crear: ${res.status}`);
-          return res.json();
-        });
+        const promises = form.entidadIds.map((entidadId) =>
+          apirndcProxyCall("POST", "/documentos", { ...basePayload, entidadId }),
+        );
         await Promise.all(promises);
         const count = form.entidadIds.length;
         toast.success(
