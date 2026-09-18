@@ -523,9 +523,11 @@ function EliminarDialog({ orden, onClose }: { orden: ApiRndcOrdenTrabajo | null;
 
 export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
   const queryClient = useQueryClient();
-  const { role, apiRoles } = useAuth();
-  // Asignar/anular son de gestión (backend las restringe a admin/cliente_admin)
+  const { role, apiRoles, esMecanicoLider } = useAuth();
+  // Anular es de gestión (backend: admin/cliente_admin). Asignar también la
+  // puede hacer el mecánico líder (OTs de los mecánicos de su empresa).
   const esGestor = role !== "mecanico";
+  const puedeAsignarOts = esGestor || esMecanicoLider;
   // Borrar: admin de la plataforma y admin del cliente. Se mira el rol de la API
   // porque el AUDITOR comparte el rol "supervisor" y es de solo lectura.
   const puedeEliminar = (apiRoles ?? []).some((r) =>
@@ -673,7 +675,7 @@ export function OrdenesTab({ onNuevaOt }: OrdenesTabProps) {
                   </TableRow>
                 ) : (
                   filteredOrdenes.map((orden) => {
-                    const puedeAsignar = esGestor && (orden.estado === "ABIERTA" || orden.estado === "ASIGNADA");
+                    const puedeAsignar = puedeAsignarOts && (orden.estado === "ABIERTA" || orden.estado === "ASIGNADA");
                     const puedeIniciar = orden.estado === "ABIERTA" || orden.estado === "ASIGNADA";
                     const puedeCerrar = ["ABIERTA", "ASIGNADA", "EN_PROCESO"].includes(orden.estado);
                     const puedeAnular = esGestor && orden.estado !== "CERRADA" && orden.estado !== "ANULADA";

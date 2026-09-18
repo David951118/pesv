@@ -139,6 +139,7 @@ function getRolLabel(rol: string): string {
     PROVEEDOR: "Proveedor",
     MECANICO: "Mecánico",
     ROLE_MECANICO: "Mecánico (acceso)",
+    ROLE_MECANICO_LIDER: "Mecánico líder (acceso)",
     ROLE_AUDITOR: "Auditor (acceso)",
   };
   return labels[rol] || rol;

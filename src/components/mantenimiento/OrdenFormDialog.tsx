@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Plus, Trash2, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +151,11 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
 
   const { data: mecanicos = [], isLoading: loadingMecanicos } = useMecanicos();
 
+  // Un mecánico de base solo crea OTs para sí mismo (el backend lo auto-asigna
+  // y rechaza otro mecánico); el líder y la gestión eligen el mecánico.
+  const { role, esMecanicoLider } = useAuth();
+  const eligeMecanico = role !== "mecanico" || esMecanicoLider;
+
   const togglePlanItem = (nombre: string) => {
     setForm((f) => ({
       ...f,
@@ -184,7 +190,7 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
         prioridad: form.prioridad,
       };
       if (form.kilometraje) payload.kilometraje = Number(form.kilometraje);
-      if (form.mecanico) payload.mecanico = form.mecanico;
+      if (eligeMecanico && form.mecanico) payload.mecanico = form.mecanico;
       if (form.taller.trim()) payload.taller = form.taller.trim();
       if (form.fechaProgramada) payload.fechaProgramada = form.fechaProgramada;
       // Las actividades = mantenimientos del plan seleccionados + actividades manuales.
@@ -413,21 +419,25 @@ export function OrdenFormDialog({ open, onOpenChange, prefill }: OrdenFormDialog
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Mecánico</Label>
-              <Select
-                value={form.mecanico}
-                onValueChange={(value) => setForm({ ...form, mecanico: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingMecanicos ? "Cargando..." : "Seleccione (opcional)"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {mecanicos.map((m) => (
-                    <SelectItem key={m._id} value={m._id}>
-                      {[m.nombres, m.apellidos].filter(Boolean).join(" ") || m.identificacion}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {eligeMecanico ? (
+                <Select
+                  value={form.mecanico}
+                  onValueChange={(value) => setForm({ ...form, mecanico: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingMecanicos ? "Cargando..." : "Seleccione (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mecanicos.map((m) => (
+                      <SelectItem key={m._id} value={m._id}>
+                        {[m.nombres, m.apellidos].filter(Boolean).join(" ") || m.identificacion}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value="Se asignará a usted" disabled readOnly />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Taller</Label>

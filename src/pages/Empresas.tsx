@@ -16,8 +16,13 @@ import {
   Trash2,
   Palette,
   ArrowLeft,
+  Power,
+  PowerOff,
+  Car,
+  Users,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -49,9 +54,31 @@ interface Empresa {
   estado?: string;
   createdAt?: string;
   branding?: Partial<EmpresaBranding>;
+  // Control de acceso de la flota (ver PATCH /empresas/:id/estado)
+  desactivacion?: { fecha?: string; usuario?: string; motivo?: string };
+  totalVehiculos?: number;
+  totalTerceros?: number;
 }
 
 const emptyForm = { nit: "", razonSocial: "", nombreComercial: "" };
+
+const ESTADO_LABEL: Record<string, string> = {
+  ACTIVA: "Activa",
+  INACTIVA: "Desactivada",
+  SUSPENDIDA: "Suspendida",
+};
+
+// Sin estado (empresas antiguas) se consideran activas, igual que el backend.
+const esActiva = (e: Empresa | null) => !e?.estado || e.estado === "ACTIVA";
+
+function EstadoBadge({ empresa }: { empresa: Empresa }) {
+  const activa = esActiva(empresa);
+  return (
+    <span className={`status-badge ${activa ? "status-active" : "status-blocked"}`}>
+      {ESTADO_LABEL[empresa.estado ?? "ACTIVA"] ?? empresa.estado}
+    </span>
+  );
+}
 
 export default function Empresas() {
   const { bearerToken, user } = useAuth();
@@ -64,6 +91,11 @@ export default function Empresas() {
   const [showCreate, setShowCreate] = useState(false);
   const [editEmpresa, setEditEmpresa] = useState<Empresa | null>(null);
   const [deleteEmpresa, setDeleteEmpresa] = useState<Empresa | null>(null);
+
+  // Activar / desactivar (corta el acceso de toda la flota)
+  const [toggleEmpresa, setToggleEmpresa] = useState<Empresa | null>(null);
+  const [motivoEstado, setMotivoEstado] = useState("");
+  const [toggling, setToggling] = useState(false);
 
   // Branding editor
   const [brandingEmpresa, setBrandingEmpresa] = useState<Empresa | null>(null);
@@ -196,6 +228,42 @@ export default function Empresas() {
       }
     } catch {
       toast.error("Error de conexión");
+    }
+  };
+
+  // ── Activar / Desactivar ──
+
+  const openToggle = (empresa: Empresa) => {
+    setMotivoEstado("");
+    setToggleEmpresa(empresa);
+  };
+
+  const handleToggleEstado = async () => {
+    if (!toggleEmpresa) return;
+    const activar = !esActiva(toggleEmpresa);
+    setToggling(true);
+    try {
+      const res = await fetch(`${base}/api/empresas/${toggleEmpresa._id}/estado`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          estado: activar ? "ACTIVA" : "INACTIVA",
+          motivo: motivoEstado.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        toast.success(json.message || (activar ? "Empresa activada" : "Empresa desactivada"));
+        setToggleEmpresa(null);
+        setMotivoEstado("");
+        fetchEmpresas();
+      } else {
+        toast.error(json.message || "Error al cambiar el estado");
+      }
+    } catch {
+      toast.error("Error de conexión");
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -343,6 +411,7 @@ export default function Empresas() {
                     <th className="text-left px-4 py-3 font-semibold">NIT</th>
                     <th className="text-left px-4 py-3 font-semibold">Nombre Comercial</th>
                     <th className="text-left px-4 py-3 font-semibold">Colores</th>
+                    <th className="text-left px-4 py-3 font-semibold">Flota</th>
                     <th className="text-left px-4 py-3 font-semibold">Estado</th>
                     <th className="text-center px-4 py-3 font-semibold">Acciones</th>
                   </tr>
@@ -350,7 +419,7 @@ export default function Empresas() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <td colSpan={7} className="text-center py-8 text-muted-foreground">
                         No se encontraron empresas
                       </td>
                     </tr>
@@ -386,10 +455,18 @@ export default function Empresas() {
                               />
                             </div>
                           </td>
-                          <td className="px-4 py-3">
-                            <span className="status-badge status-active">
-                              {empresa.estado || "Activa"}
+                          <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 mr-3" title="Vehículos afiliados">
+                              <Car className="h-4 w-4" />
+                              {empresa.totalVehiculos ?? 0}
                             </span>
+                            <span className="inline-flex items-center gap-1" title="Usuarios (terceros) de la empresa">
+                              <Users className="h-4 w-4" />
+                              {empresa.totalTerceros ?? 0}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <EstadoBadge empresa={empresa} />
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-1">
@@ -419,6 +496,27 @@ export default function Empresas() {
                                 onClick={() => setBrandingEmpresa(empresa)}
                               >
                                 <Palette className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={
+                                  esActiva(empresa)
+                                    ? "h-8 w-8 text-warning hover:text-warning"
+                                    : "h-8 w-8 text-success hover:text-success"
+                                }
+                                title={
+                                  esActiva(empresa)
+                                    ? "Desactivar empresa (toda su flota pierde el acceso)"
+                                    : "Activar empresa (su flota recupera el acceso)"
+                                }
+                                onClick={() => openToggle(empresa)}
+                              >
+                                {esActiva(empresa) ? (
+                                  <PowerOff className="h-4 w-4" />
+                                ) : (
+                                  <Power className="h-4 w-4" />
+                                )}
                               </Button>
                               <Button
                                 variant="ghost"
@@ -467,8 +565,26 @@ export default function Empresas() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Estado:</span>
-                <span className="font-medium">{viewEmpresa?.estado || "Activa"}</span>
+                {viewEmpresa && <EstadoBadge empresa={viewEmpresa} />}
               </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Flota:</span>
+                <span className="font-medium">
+                  {viewEmpresa?.totalVehiculos ?? 0} vehículo(s) · {viewEmpresa?.totalTerceros ?? 0} usuario(s)
+                </span>
+              </div>
+              {viewEmpresa && !esActiva(viewEmpresa) && (
+                <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs space-y-1">
+                  <p className="font-semibold text-destructive">Acceso de la flota bloqueado</p>
+                  {viewEmpresa.desactivacion?.fecha && (
+                    <p>
+                      Desde: {new Date(viewEmpresa.desactivacion.fecha).toLocaleString("es-CO")}
+                      {viewEmpresa.desactivacion.usuario ? ` · por ${viewEmpresa.desactivacion.usuario}` : ""}
+                    </p>
+                  )}
+                  <p>Motivo: {viewEmpresa.desactivacion?.motivo || "—"}</p>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">ID:</span>
                 <span className="font-mono text-xs">{viewEmpresa?._id}</span>
@@ -558,6 +674,93 @@ export default function Empresas() {
                   </>
                 ) : (
                   "Guardar Cambios"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Activar / Desactivar ── */}
+        <Dialog
+          open={!!toggleEmpresa}
+          onOpenChange={(open) => {
+            if (!open && !toggling) setToggleEmpresa(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {toggleEmpresa && esActiva(toggleEmpresa) ? "Desactivar empresa" : "Activar empresa"}
+              </DialogTitle>
+              <DialogDescription>
+                {toggleEmpresa?.razonSocial} · NIT {toggleEmpresa?.nit}
+              </DialogDescription>
+            </DialogHeader>
+
+            {toggleEmpresa && esActiva(toggleEmpresa) ? (
+              <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm space-y-2">
+                <p className="font-semibold">Al desactivar la empresa, toda su flota pierde el acceso:</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>
+                    <strong>{toggleEmpresa.totalVehiculos ?? 0}</strong> vehículo(s) afiliado(s) dejan de tener
+                    acceso a la plataforma.
+                  </li>
+                  <li>
+                    <strong>{toggleEmpresa.totalTerceros ?? 0}</strong> usuario(s) de la empresa no podrán iniciar
+                    sesión.
+                  </li>
+                  <li>Las sesiones abiertas se cierran de inmediato.</li>
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  La información no se borra: al reactivar la empresa todos recuperan el acceso.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-md border border-success/30 bg-success/10 p-3 text-sm">
+                Al activar la empresa, sus <strong>{toggleEmpresa?.totalVehiculos ?? 0}</strong> vehículo(s) y{" "}
+                <strong>{toggleEmpresa?.totalTerceros ?? 0}</strong> usuario(s) recuperan el acceso a la plataforma.
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="motivo-estado">Motivo (opcional)</Label>
+              <Textarea
+                id="motivo-estado"
+                rows={3}
+                placeholder={
+                  toggleEmpresa && esActiva(toggleEmpresa)
+                    ? "Ej.: mora en pagos, fin de contrato, solicitud del cliente"
+                    : "Ej.: pago recibido, contrato renovado"
+                }
+                value={motivoEstado}
+                onChange={(e) => setMotivoEstado(e.target.value)}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setToggleEmpresa(null)} disabled={toggling}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleToggleEstado}
+                disabled={toggling}
+                variant={toggleEmpresa && esActiva(toggleEmpresa) ? "destructive" : "default"}
+              >
+                {toggling ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Aplicando...
+                  </>
+                ) : toggleEmpresa && esActiva(toggleEmpresa) ? (
+                  <>
+                    <PowerOff className="mr-2 h-4 w-4" />
+                    Desactivar empresa y su flota
+                  </>
+                ) : (
+                  <>
+                    <Power className="mr-2 h-4 w-4" />
+                    Activar empresa
+                  </>
                 )}
               </Button>
             </DialogFooter>

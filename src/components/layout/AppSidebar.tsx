@@ -48,12 +48,12 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-function getRoleLabel(role: AppRole | null): string {
+function getRoleLabel(role: AppRole | null, lider = false): string {
   switch (role) {
     case "admin": return "Administrador";
     case "supervisor": return "Supervisor";
     case "conductor": return "Conductor";
-    case "mecanico": return "Mecánico";
+    case "mecanico": return lider ? "Mecánico líder" : "Mecánico";
     default: return "Usuario";
   }
 }
@@ -115,7 +115,7 @@ const navGroups: NavGroup[] = [
 
 export function AppSidebar() {
   const location = useLocation();
-  const { user, role, signOut } = useAuth();
+  const { user, role, signOut, esMecanicoLider } = useAuth();
   const { empresa, branding } = useEmpresaBranding();
   const { isMobile, setOpenMobile } = useSidebar();
 
@@ -184,7 +184,7 @@ export function AppSidebar() {
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-medium">{firstName}</span>
-                    <span className="truncate text-xs text-muted-foreground">{getRoleLabel(role)}</span>
+                    <span className="truncate text-xs text-muted-foreground">{getRoleLabel(role, esMecanicoLider)}</span>
                   </div>
                   <ChevronsUpDown className="ml-auto size-4" />
                 </SidebarMenuButton>
@@ -206,7 +206,7 @@ export function AppSidebar() {
                           <User className="h-3 w-3 text-primary" />
                         )}
                       </div>
-                      <span>{getRoleLabel(role)}</span>
+                      <span>{getRoleLabel(role, esMecanicoLider)}</span>
                     </div>
                   </div>
                 </DropdownMenuLabel>

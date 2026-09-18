@@ -16,6 +16,9 @@ export const API_ROLE_MAP: Record<string, { appRole: AppRole; priority: number }
   // Temporal: el backend restringe ROLE_AUDITOR a solo lectura
   ROLE_AUDITOR:      { appRole: "supervisor",  priority: 2 },
   ROLE_MECANICO:     { appRole: "mecanico",    priority: 1.5 },
+  // Mecánico líder: mismo rol de app que el mecánico; lo extra (ver/editar/
+  // crear/asignar OTs de otros mecánicos) se gatea con `esMecanicoLider`.
+  ROLE_MECANICO_LIDER: { appRole: "mecanico",  priority: 1.6 },
   ROLE_CLIENTE:      { appRole: "conductor",   priority: 1 },
   ROLE_USER:         { appRole: "conductor",   priority: 0 },
 };
@@ -68,6 +71,8 @@ interface AuthContextType {
   cellviToken: string | null;
   role: AppRole | null;
   apiRoles: string[];
+  /** Mecánico con permisos sobre las OTs de otros mecánicos de su empresa */
+  esMecanicoLider: boolean;
   empresaId: string | null;
   conductorId: string | null;
   loading: boolean;
@@ -267,7 +272,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!res.ok) {
-        return { error: new Error("Credenciales inválidas. Verifica tu usuario y contraseña.") };
+        // 403 = credenciales correctas pero la empresa del usuario está
+        // desactivada: mostrar el mensaje del servidor, no "credenciales inválidas".
+        let mensaje = "Credenciales inválidas. Verifica tu usuario y contraseña.";
+        if (res.status === 403) {
+          try {
+            const err = await res.json();
+            mensaje = err?.message || err?.error || "Acceso bloqueado.";
+          } catch {
+            mensaje = "Acceso bloqueado.";
+          }
+        }
+        return { error: new Error(mensaje) };
       }
 
       const data = await res.json();
@@ -313,6 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cellviToken,
         role,
         apiRoles: user?.apiRoles ?? [],
+        esMecanicoLider: (user?.apiRoles ?? []).includes("ROLE_MECANICO_LIDER"),
         empresaId,
         conductorId,
         loading,

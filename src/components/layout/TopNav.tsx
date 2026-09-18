@@ -30,12 +30,12 @@ import { getLogoSrc } from "@/assets/logos";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertsPopup } from "@/components/dashboard/AlertsPopup";
 
-function getRoleLabel(role: AppRole | null): string {
+function getRoleLabel(role: AppRole | null, lider = false): string {
   switch (role) {
     case "admin": return "Administrador";
     case "supervisor": return "Supervisor";
     case "conductor": return "Conductor";
-    case "mecanico": return "Mecánico";
+    case "mecanico": return lider ? "Mecánico líder" : "Mecánico";
     default: return "Usuario";
   }
 }
@@ -92,7 +92,7 @@ const navItems: NavItem[] = [
 
 export function TopNav() {
   const location = useLocation();
-  const { user, role, signOut } = useAuth();
+  const { user, role, signOut, esMecanicoLider } = useAuth();
   const { empresa, branding } = useEmpresaBranding();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -168,7 +168,7 @@ export function TopNav() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{firstName}</p>
                       <p className="text-xs text-muted-foreground">
-                        {getRoleLabel(role)}
+                        {getRoleLabel(role, esMecanicoLider)}
                       </p>
                     </div>
                   </div>
@@ -244,7 +244,7 @@ export function TopNav() {
                       {firstName}
                     </span>
                     <span className="text-[10px] font-medium text-nav-foreground/60 bg-nav-foreground/10 px-1.5 py-0.5 rounded-full leading-tight">
-                      {getRoleLabel(role)}
+                      {getRoleLabel(role, esMecanicoLider)}
                     </span>
                   </div>
                   <ChevronDown className="h-4 w-4 text-nav-foreground/60" />
@@ -260,14 +260,14 @@ export function TopNav() {
                           <div className="p-1 rounded bg-primary/10">
                             <Shield className="h-3 w-3 text-primary" />
                           </div>
-                          <span>{getRoleLabel(role)}</span>
+                          <span>{getRoleLabel(role, esMecanicoLider)}</span>
                         </>
                       ) : (
                         <>
                           <div className="p-1 rounded bg-muted">
                             <User className="h-3 w-3" />
                           </div>
-                          <span>{getRoleLabel(role)}</span>
+                          <span>{getRoleLabel(role, esMecanicoLider)}</span>
                         </>
                       )}
                     </div>

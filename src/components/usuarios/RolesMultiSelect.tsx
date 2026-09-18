@@ -21,6 +21,11 @@ export interface RoleOption {
    * prefijo ROLE_). splitRoles() los separa luego por el prefijo.
    */
   tokens: string[];
+  /**
+   * Tokens que se agregan al marcar la opción pero NO la definen ni se quitan
+   * al desmarcarla (p. ej. el líder implica el perfil y acceso de mecánico).
+   */
+  implies?: string[];
 }
 
 // Perfil / roles de negocio. Son etiquetas de la persona; por sí solos NO dan
@@ -42,6 +47,13 @@ export const ACCESS_ROLES: RoleOption[] = [
     label: "Mecánico",
     hint: "opera órdenes de trabajo",
     tokens: ["MECANICO", "ROLE_MECANICO"],
+  },
+  {
+    value: "MECANICO_LIDER",
+    label: "Mecánico líder",
+    hint: "además ve, edita, crea y asigna OTs de otros mecánicos",
+    tokens: ["ROLE_MECANICO_LIDER"],
+    implies: ["MECANICO", "ROLE_MECANICO"],
   },
   {
     value: "AUDITOR",
@@ -108,7 +120,7 @@ export function RolesMultiSelect({ value, onChange, className }: Props) {
     } else {
       onChange([
         ...selected,
-        ...opt.tokens.filter((t) => !selected.includes(t)),
+        ...[...opt.tokens, ...(opt.implies ?? [])].filter((t) => !selected.includes(t)),
       ]);
     }
     // Cerrar el desplegable tras elegir; para marcar otro rol se vuelve a abrir
