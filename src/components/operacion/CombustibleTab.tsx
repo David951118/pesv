@@ -425,11 +425,12 @@ function EliminarDialog({ tanqueo, onClose }: { tanqueo: ApiRndcTanqueo | null; 
 
 export function CombustibleTab() {
   const { role, user } = useAuth();
-  const isAdmin = role === "admin"; // Editar/eliminar tanqueos sigue siendo exclusivo del admin (backend: ADMIN_COMBUSTIBLE)
-  // Registrar tanqueo: lo permite el backend (REGISTRO_TANQUEO) a admin y CLIENTE_ADMIN.
+  const isAdmin = role === "admin"; // Eliminar tanqueos sigue siendo exclusivo del admin (backend: ADMIN_COMBUSTIBLE)
+  // Registrar y editar tanqueo: lo permite el backend (REGISTRO_TANQUEO / EDICION_TANQUEO) a admin y CLIENTE_ADMIN.
   // Verificamos el rol real de la API (no el "role" colapsado) para no habilitarlo a AUDITOR (solo lectura).
   const apiRolesNorm = (user?.apiRoles ?? []).map((r) => r.replace(/^ROLE_/, "").toUpperCase());
   const canRegistrar = apiRolesNorm.some((r) => ["ADMIN", "SUPER_ADMIN", "CLIENTE_ADMIN"].includes(r));
+  const canEditar = canRegistrar; // El backend acota al CLIENTE_ADMIN a los tanqueos de su empresa.
   const [vehiculoFilter, setVehiculoFilter] = useState("all");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
@@ -584,9 +585,9 @@ export function CombustibleTab() {
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        {isAdmin ? (
-                          // Editar/eliminar tanqueos: exclusivo del admin de plataforma
-                          // (backend ADMIN_COMBUSTIBLE); botones visibles, sin menú oculto.
+                        {canEditar ? (
+                          // Editar: admin y CLIENTE_ADMIN (backend EDICION_TANQUEO).
+                          // Eliminar: exclusivo del admin de plataforma (backend ADMIN_COMBUSTIBLE).
                           <div className="flex items-center justify-center gap-1">
                             <Button
                               variant="ghost"
@@ -601,16 +602,18 @@ export function CombustibleTab() {
                               <Pencil className="h-4 w-4" />
                               <span className="sr-only">Editar</span>
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              title="Eliminar tanqueo"
-                              onClick={() => setEliminarTanqueo(t)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Eliminar</span>
-                            </Button>
+                            {isAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                title="Eliminar tanqueo"
+                                onClick={() => setEliminarTanqueo(t)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Eliminar</span>
+                              </Button>
+                            )}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
