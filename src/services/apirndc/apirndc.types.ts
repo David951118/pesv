@@ -708,7 +708,7 @@ export interface ApiRndcViajeFinalizarPayload {
 
 // ─── Operación: Combustible ───
 
-export type ApiRndcTipoCombustible = 'GASOLINA' | 'DIESEL' | 'GAS';
+export type ApiRndcTipoCombustible = 'GASOLINA' | 'DIESEL' | 'GAS' | 'UREA';
 
 export interface ApiRndcTanqueo {
   _id: string;

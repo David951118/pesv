@@ -129,12 +129,13 @@ export function recalcCombustible<T extends CombustibleNums>(
 
 // ─── Combustible ───
 
-export const TIPO_COMBUSTIBLE: ApiRndcTipoCombustible[] = ["GASOLINA", "DIESEL", "GAS"];
+export const TIPO_COMBUSTIBLE: ApiRndcTipoCombustible[] = ["GASOLINA", "DIESEL", "GAS", "UREA"];
 
 export const TIPO_COMBUSTIBLE_LABELS: Record<ApiRndcTipoCombustible, string> = {
   GASOLINA: "Gasolina",
   DIESEL: "Diésel",
   GAS: "Gas",
+  UREA: "Urea",
 };
 
 // ─── Kilometraje (fuente) ───
