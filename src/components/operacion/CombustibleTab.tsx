@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { format } from "date-fns";
 import { Check, Gauge, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,7 +126,8 @@ function TanqueoFormDialog({
         estacion: tanqueo.estacion ?? "",
         tanqueLleno: tanqueo.tanqueLleno ?? true,
         conductor: tanqueo.conductor?._id ?? "",
-        fecha: tanqueo.fecha ? tanqueo.fecha.substring(0, 10) : "",
+        // Día local (Colombia): substring(0, 10) daba el día UTC, que tras las 7 p. m. es mañana.
+        fecha: tanqueo.fecha ? format(new Date(tanqueo.fecha), "yyyy-MM-dd") : "",
       });
     } else {
       setForm(initialForm);
